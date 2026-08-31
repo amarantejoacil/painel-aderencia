@@ -4,6 +4,31 @@ Aplicação web para conferir lançamentos de Tasks exportados do Azure Boards. 
 
 O indicador principal é **Aderência de Horas**. Horas excedentes entram no executado, mas não elevam o percentual acima de 100%.
 
+## Como executar com Docker
+
+É o modo recomendado. Sobe PostgreSQL, a API FastAPI e a interface (nginx).
+
+```bash
+docker compose up --build
+```
+
+- Interface: http://127.0.0.1:43123
+- API: http://127.0.0.1:43124/api/health
+
+O frontend chama `/api` no mesmo origin; o nginx encaminha para o serviço `api`.
+
+Para parar e remover os containers:
+
+```bash
+docker compose down
+```
+
+Os dados do Postgres ficam no volume `pgdata`. Para zerar o banco:
+
+```bash
+docker compose down -v
+```
+
 ## O que o sistema faz
 
 1. Cadastro de colaboradores (nome, nome no Azure, entrada, saída, carga diária).
@@ -24,18 +49,7 @@ O export real do Boards usado pela equipe tem estas colunas:
 
 Há um arquivo de exemplo em `backend/samples/relatorio-contrato-exemplo.csv`.
 
-## Como executar
-
-### Docker Compose
-
-```bash
-docker compose up --build
-```
-
-- Interface: http://127.0.0.1:43123
-- API: http://127.0.0.1:43124/api/health
-
-### Sem Docker (desenvolvimento)
+## Sem Docker (desenvolvimento)
 
 PostgreSQL local com banco `aderencia` e usuário `aderencia`.
 
