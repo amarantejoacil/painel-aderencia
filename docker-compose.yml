@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: aderencia
+      POSTGRES_PASSWORD: aderencia
+      POSTGRES_DB: aderencia
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aderencia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    ports:
+      - "43124:43124"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://aderencia:aderencia@db:5432/aderencia
+      CORS_ORIGINS: http://127.0.0.1:43123,http://localhost:43123
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    ports:
+      - "43123:43123"
+    environment:
+      VITE_API_PROXY: http://api:43124
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
