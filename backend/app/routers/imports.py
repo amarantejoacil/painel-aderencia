@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Activity, Collaborator, ImportBatch
+from app.models import ImportBatch
 from app.schemas import ImportOut, ImportPeriodSummary, ImportPreviewOut
-from app.services.csv_parser import CsvValidationError, normalize_name, parse_csv
+from app.services.activity_normalization import from_parsed_csv
+from app.services.activity_persistence import persist_csv_snapshot
+from app.services.csv_parser import CsvValidationError, parse_csv
 from app.services.import_period import count_outside_period, summarize_import_period
 
 router = APIRouter(prefix="/imports", tags=["imports"])
@@ -113,66 +115,12 @@ async def upload_import(
     filename, parsed = await _parse_upload(file)
     _validate_reference_period(parsed, year, month)
 
-    collaborators = list(db.scalars(select(Collaborator)).all())
-    by_azure = {normalize_name(item.azure_name): item for item in collaborators}
-
-    unmapped: set[str] = set()
-    mapped_count = 0
-    rows: list[Activity] = []
-    warnings = list(parsed.warnings)
-
-    for activity in parsed.activities:
-        match = by_azure.get(normalize_name(activity.assignee_name))
-        if match is None:
-            unmapped.add(activity.assignee_name)
-        else:
-            mapped_count += 1
-        rows.append(
-            Activity(
-                task_id=activity.task_id,
-                title=activity.title,
-                work_item_type=activity.work_item_type,
-                azure_assignee=activity.azure_assignee,
-                collaborator_id=match.id if match else None,
-                work_date=activity.work_date,
-                estimated_hours=activity.estimated_hours,
-                completed_hours=activity.completed_hours,
-                state=activity.state,
-                project=activity.project,
-                activity_category=activity.activity_category,
-            )
-        )
-
-    if unmapped:
-        names = ", ".join(sorted(unmapped))
-        warnings.append(
-            {
-                "kind": "unmapped",
-                "message": (
-                    f"{len(unmapped)} responsável(is) do CSV não possuem cadastro: {names}. "
-                    "Cadastre o colaborador com o mesmo nome usado no Azure e importe novamente."
-                ),
-                "row": None,
-            }
-        )
-
-    batch = ImportBatch(
+    normalized = [from_parsed_csv(item, source="csv") for item in parsed.activities]
+    return persist_csv_snapshot(
+        db,
         filename=filename,
-        imported_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        row_count=len(rows),
-        mapped_count=mapped_count,
-        unmapped_count=len(rows) - mapped_count,
-        warning_count=len(warnings),
-        status="success",
-        reference_year=year,
-        reference_month=month,
-        warnings=warnings,
+        year=year,
+        month=month,
+        items=normalized,
+        extra_warnings=list(parsed.warnings),
     )
-    db.add(batch)
-    db.flush()
-    for row in rows:
-        row.import_id = batch.id
-        db.add(row)
-    db.commit()
-    db.refresh(batch)
-    return batch

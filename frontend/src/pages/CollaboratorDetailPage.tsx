@@ -6,7 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, Td, Th } from '@/components/ui/table'
-import { api, type CollaboratorAbsence, type CollaboratorAnalysis, type DayResult } from '@/lib/api'
+import { api, type CollaboratorAbsence, type CollaboratorAnalysis, type DayResult, type DayTask } from '@/lib/api'
 import {
   ABSENCE_TYPE_LABEL,
   currentYearMonth,
@@ -30,6 +30,19 @@ const EMPTY_ABSENCE: {
   start_date: '',
   end_date: '',
   note: '',
+}
+
+function formatDayTaskStatuses(tasks: DayTask[]): string {
+  if (tasks.length === 0) return '—'
+  const labels = [
+    ...new Set(
+      tasks
+        .map((task) => task.state)
+        .filter((state): state is string => Boolean(state?.trim()))
+        .map((state) => formatAzureState(state)),
+    ),
+  ]
+  return labels.length > 0 ? labels.join(', ') : '—'
 }
 
 export function CollaboratorDetailPage() {
@@ -224,6 +237,7 @@ export function CollaboratorDetailPage() {
                 <Th className="text-right">Esperado</Th>
                 <Th className="text-right">Executado</Th>
                 <Th className="text-right">Diferença</Th>
+                <Th>Status da Task</Th>
                 <Th>Status</Th>
               </tr>
             </thead>
@@ -257,6 +271,7 @@ export function CollaboratorDetailPage() {
                       {Number(day.difference) > 0 ? '+' : ''}
                       {formatHours(day.difference)}
                     </Td>
+                    <Td className="text-sm">{formatDayTaskStatuses(day.tasks)}</Td>
                     <Td>
                       <StatusBadge status={day.status} />
                     </Td>
@@ -311,11 +326,28 @@ export function CollaboratorDetailPage() {
                       <p className="font-medium">
                         Task {task.task_id} — {task.title}
                       </p>
-                      <p className="text-sm text-muted">
-                        {task.activity_category ? `${task.activity_category} · ` : ''}
-                        {task.completed_hours != null ? formatHours(task.completed_hours) : 'Horas não informadas'}
-                        {task.state ? ` · ${formatAzureState(task.state)}` : ''}
-                      </p>
+                      <dl className="mt-2 space-y-1 text-sm">
+                        {task.activity_category && (
+                          <div className="flex flex-wrap gap-1">
+                            <dt className="font-medium text-muted">Atividade:</dt>
+                            <dd>{task.activity_category}</dd>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-1">
+                          <dt className="font-medium text-muted">Horas executadas:</dt>
+                          <dd>
+                            {task.completed_hours != null
+                              ? formatHours(task.completed_hours)
+                              : 'Não informadas'}
+                          </dd>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          <dt className="font-medium text-muted">Status da Task:</dt>
+                          <dd className="font-medium text-ink">
+                            {task.state ? formatAzureState(task.state) : '—'}
+                          </dd>
+                        </div>
+                      </dl>
                     </li>
                   ))}
                 </ul>

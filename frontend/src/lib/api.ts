@@ -59,7 +59,39 @@ export type ImportResult = {
   status: string
   reference_year: number | null
   reference_month: number | null
+  source: 'csv' | 'azure_api'
   warnings: ImportWarning[]
+}
+
+export type AzureDevOpsStatus = {
+  configured: boolean
+  last_sync_at: string | null
+}
+
+export type AzureDevOpsTestResult = {
+  ok: boolean
+  message?: string | null
+}
+
+export type AzureDevOpsSyncResult = {
+  period_label: string
+  tasks_found: number
+  created: number
+  updated: number
+  ignored: number
+  last_sync_at: string
+  import_id: number
+}
+
+export type AzureDevOpsSettings = {
+  configured: boolean
+  base_url: string | null
+  organization: string | null
+  project: string | null
+  pat_configured: boolean
+  pat_expires_at: string | null
+  last_test_at: string | null
+  last_test_ok: boolean | null
 }
 
 export type ImportPreview = {
@@ -208,6 +240,28 @@ export const api = {
     body.append('month', String(month))
     return request<ImportResult>('/imports', { method: 'POST', body })
   },
+  getAzureDevOpsStatus: () => request<AzureDevOpsStatus>('/azure-devops/status'),
+  testAzureDevOpsConnection: () =>
+    request<AzureDevOpsTestResult>('/azure-devops/test-connection', { method: 'POST' }),
+  syncAzureDevOps: (year: number, month: number) =>
+    request<AzureDevOpsSyncResult>('/azure-devops/sync', {
+      method: 'POST',
+      body: JSON.stringify({ year, month }),
+    }),
+  getAzureDevOpsSettings: () => request<AzureDevOpsSettings>('/settings/azure-devops'),
+  updateAzureDevOpsSettings: (payload: {
+    base_url: string
+    organization: string
+    project: string
+    pat: string | null
+    pat_expires_at: string | null
+  }) =>
+    request<AzureDevOpsSettings>('/settings/azure-devops', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+  testAzureDevOpsSettings: () =>
+    request<AzureDevOpsTestResult>('/settings/azure-devops/test-connection', { method: 'POST' }),
   dashboard: (params: { year: number; month: number; collaborator_id?: number; status?: string }) => {
     const query = new URLSearchParams({ year: String(params.year), month: String(params.month) })
     if (params.collaborator_id) query.set('collaborator_id', String(params.collaborator_id))

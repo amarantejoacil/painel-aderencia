@@ -52,8 +52,16 @@ export function formatDate(value: string): string {
   return `${day}/${month}/${year}`
 }
 
+/** Timestamps da API são UTC sem sufixo Z — normaliza antes de exibir no fuso local. */
+export function parseApiDateTime(value: string): Date {
+  if (!value) return new Date(Number.NaN)
+  const hasTimezone = /[zZ]$|[+-]\d{2}:\d{2}$/.test(value)
+  const normalized = value.includes('T') && !hasTimezone ? `${value}Z` : value
+  return new Date(normalized)
+}
+
 export function formatDateTime(value: string): string {
-  const date = new Date(value)
+  const date = parseApiDateTime(value)
   return date.toLocaleString('pt-BR', {
     day: '2-digit',
     month: '2-digit',

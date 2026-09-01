@@ -63,6 +63,7 @@ class ImportBatch(Base):
     status: Mapped[str] = mapped_column(String(30), default="success")
     reference_year: Mapped[int | None] = mapped_column(nullable=True)
     reference_month: Mapped[int | None] = mapped_column(nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="csv", index=True)
     warnings: Mapped[list] = mapped_column(JSONB, default=list)
 
     activities: Mapped[list["Activity"]] = relationship(
@@ -88,6 +89,23 @@ class Activity(Base):
     state: Mapped[str | None] = mapped_column(String(80), nullable=True)
     project: Mapped[str | None] = mapped_column(String(200), nullable=True)
     activity_category: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="csv", index=True)
 
     import_batch: Mapped[ImportBatch] = relationship(back_populates="activities")
     collaborator: Mapped[Collaborator | None] = relationship(back_populates="activities")
+
+
+class AzureDevOpsSettings(Base):
+    __tablename__ = "azure_devops_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    organization: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    project: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    encrypted_pat: Mapped[str | None] = mapped_column(Text, nullable=True)
+    pat_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    work_date_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    activity_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

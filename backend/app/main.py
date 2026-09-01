@@ -6,7 +6,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.db_migrations import ensure_schema
-from app.routers import activities_export, calendar_exceptions, collaborator_absences, collaborators, dashboard, imports, inconsistencies_report
+from app.routers import activities_export, azure_devops, calendar_exceptions, collaborator_absences, collaborators, dashboard, imports, inconsistencies_report
+from app.routers import settings as settings_router
+from app.services.azure_devops_config import migrate_env_to_db_if_needed
 from app.seed import seed_if_empty
 
 
@@ -17,6 +19,7 @@ async def lifespan(_app: FastAPI):
     db = SessionLocal()
     try:
         seed_if_empty(db)
+        migrate_env_to_db_if_needed(db)
     finally:
         db.close()
     yield
@@ -37,6 +40,8 @@ app.include_router(collaborators.router, prefix="/api")
 app.include_router(collaborator_absences.router, prefix="/api")
 app.include_router(calendar_exceptions.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
+app.include_router(azure_devops.router, prefix="/api")
+app.include_router(settings_router.router, prefix="/api")
 app.include_router(activities_export.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(inconsistencies_report.router, prefix="/api")

@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { CalendarDays, LayoutDashboard, Upload, Users } from 'lucide-react'
+import { CalendarDays, LayoutDashboard, Settings, Upload, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const LINKS = [
@@ -7,6 +7,7 @@ const LINKS = [
   { to: '/importacao', label: 'Importação', icon: Upload },
   { to: '/colaboradores', label: 'Colaboradores', icon: Users },
   { to: '/calendario', label: 'Calendário', icon: CalendarDays },
+  { to: '/configuracoes', label: 'Configurações', icon: Settings },
 ]
 
 export function Layout() {

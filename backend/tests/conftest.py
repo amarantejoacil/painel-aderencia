@@ -3,6 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base, get_db
+from app.db_migrations import ensure_schema
 from app.main import app
 from app.seed import seed_if_empty
 
@@ -15,6 +16,7 @@ TestingSession = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 def client():
     Base.metadata.drop_all(bind=engine)
     Base.metadata.create_all(bind=engine)
+    ensure_schema(engine)
     db = TestingSession()
     try:
         seed_if_empty(db)

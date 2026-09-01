@@ -94,7 +94,57 @@ class ImportOut(BaseModel):
     status: str
     reference_year: int | None = None
     reference_month: int | None = None
+    source: str = "csv"
     warnings: list[ImportWarning] = []
+
+
+class AzureDevOpsStatusOut(BaseModel):
+    configured: bool
+    last_sync_at: datetime | None = None
+
+
+class AzureDevOpsTestOut(BaseModel):
+    ok: bool
+    message: str | None = None
+
+
+class AzureDevOpsFieldProbeOut(BaseModel):
+    custom_field_references: list[str] = []
+    selected_mapping: dict[str, str | None] = {}
+
+
+class AzureDevOpsSyncIn(BaseModel):
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+
+
+class AzureDevOpsSyncOut(BaseModel):
+    period_label: str
+    tasks_found: int
+    created: int
+    updated: int
+    ignored: int
+    last_sync_at: datetime
+    import_id: int
+
+
+class AzureDevOpsSettingsOut(BaseModel):
+    configured: bool
+    base_url: str | None = None
+    organization: str | None = None
+    project: str | None = None
+    pat_configured: bool = False
+    pat_expires_at: date | None = None
+    last_test_at: datetime | None = None
+    last_test_ok: bool | None = None
+
+
+class AzureDevOpsSettingsUpdate(BaseModel):
+    base_url: str = Field(min_length=1, max_length=500)
+    organization: str = Field(min_length=1, max_length=200)
+    project: str = Field(min_length=1, max_length=200)
+    pat: str | None = Field(default=None, max_length=500)
+    pat_expires_at: date | None = None
 
 
 class DayTaskOut(BaseModel):
