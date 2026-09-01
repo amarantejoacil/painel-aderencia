@@ -57,7 +57,21 @@ export type ImportResult = {
   unmapped_count: number
   warning_count: number
   status: string
+  reference_year: number | null
+  reference_month: number | null
   warnings: ImportWarning[]
+}
+
+export type ImportPreview = {
+  filename: string
+  row_count: number
+  year: number
+  month: number
+  min_date: string
+  max_date: string
+  primary_count: number
+  outside_primary_count: number
+  periods: Array<{ year: number; month: number; count: number }>
 }
 
 export type DayTask = {
@@ -66,6 +80,7 @@ export type DayTask = {
   completed_hours: number | string | null
   state: string | null
   project: string | null
+  activity_category: string | null
 }
 
 export type DayResult = {
@@ -103,6 +118,10 @@ export type CollaboratorSummary = {
   justified_absence: number
 }
 
+export type DashboardRow = CollaboratorSummary & {
+  days: DayResult[]
+}
+
 export type Dashboard = {
   year: number
   month: number
@@ -116,7 +135,12 @@ export type Dashboard = {
     missing: number
     excess: number
   }
-  rows: CollaboratorSummary[]
+  rows: DashboardRow[]
+  daily_adherence: Array<{
+    date: string
+    adherence: number | string
+    collaborators: number
+  }>
 }
 
 export type CollaboratorAnalysis = {
@@ -163,12 +187,25 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(payload),
     }),
+  updateException: (id: number, payload: Omit<CalendarException, 'id'>) =>
+    request<CalendarException>(`/calendar-exceptions/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
   deleteException: (id: number) => request<void>(`/calendar-exceptions/${id}`, { method: 'DELETE' }),
   deleteImport: (id: number) => request<void>(`/imports/${id}`, { method: 'DELETE' }),
+  listImports: () => request<ImportResult[]>('/imports'),
   latestImport: () => request<ImportResult | null>('/imports/latest'),
-  uploadImport: async (file: File) => {
+  previewImport: async (file: File) => {
     const body = new FormData()
     body.append('file', file)
+    return request<ImportPreview>('/imports/preview', { method: 'POST', body })
+  },
+  uploadImport: async (file: File, year: number, month: number) => {
+    const body = new FormData()
+    body.append('file', file)
+    body.append('year', String(year))
+    body.append('month', String(month))
     return request<ImportResult>('/imports', { method: 'POST', body })
   },
   dashboard: (params: { year: number; month: number; collaborator_id?: number; status?: string }) => {

@@ -25,6 +25,7 @@ def _activity(**overrides) -> Activity:
         completed_hours=Decimal("2.00"),
         state="Closed",
         project=None,
+        activity_category="Desenvolvimento",
         import_id=1,
     )
     data.update(overrides)
@@ -79,10 +80,12 @@ def test_build_activities_workbook_structure() -> None:
     sheet = workbook["Atividades"]
 
     assert sheet.cell(1, 1).value == "ID"
-    assert sheet.cell(1, 6).value == "Horas Executadas"
+    assert sheet.cell(1, 4).value == "Atividade"
+    assert sheet.cell(1, 7).value == "Horas Executadas"
     assert sheet.cell(2, 1).value == "12345"
-    assert sheet.cell(2, 5).value == "Concluído"
-    assert sheet.cell(2, 6).value == 2.0
-    assert sheet.cell(3, 6).value == 6.0
+    assert sheet.cell(2, 4).value == "Desenvolvimento"
+    assert sheet.cell(2, 6).value == "Concluído"
+    assert sheet.cell(2, 7).value == 2.0
+    assert sheet.cell(3, 7).value == 6.0
     assert assignee_label(activities[0]) == "João da Silva"
-    assert sheet.auto_filter.ref == "A1:F3"
+    assert sheet.auto_filter.ref == "A1:G3"

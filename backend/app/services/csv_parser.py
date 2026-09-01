@@ -45,6 +45,14 @@ OPTIONAL_ALIASES = {
         "estimate",
     ],
     "project": ["area path", "team project", "project", "projeto"],
+    "activity_category": [
+        "atividade",
+        "atividades",
+        "activity",
+        "activity category",
+        "categoria de atividade",
+        "tipo de atividade",
+    ],
 }
 
 ASSIGNEE_RE = re.compile(r"^(?P<name>.*?)\s*<[^>]+>\s*$")
@@ -63,6 +71,7 @@ class ParsedActivity:
     estimated_hours: Decimal | None = None
     state: str | None = None
     project: str | None = None
+    activity_category: str | None = None
     row_number: int = 0
 
 
@@ -258,6 +267,9 @@ def parse_csv(raw: bytes) -> ParseResult:
                 estimated_hours=estimated,
                 state=str(row[mapping["state"]]).strip() or None if "state" in mapping else None,
                 project=str(row[mapping["project"]]).strip() or None if "project" in mapping else None,
+                activity_category=str(row[mapping["activity_category"]]).strip() or None
+                if "activity_category" in mapping
+                else None,
                 row_number=row_number,
             )
         )

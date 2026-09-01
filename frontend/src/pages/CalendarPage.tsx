@@ -7,11 +7,16 @@ import { Table, Td, Th } from '@/components/ui/table'
 import { api, type CalendarException } from '@/lib/api'
 import { EXCEPTION_LABEL, formatDate } from '@/lib/format'
 
+const EMPTY_FORM = {
+  date: '',
+  type: 'optional_day' as CalendarException['type'],
+  description: '',
+}
+
 export function CalendarPage() {
   const [rows, setRows] = useState<CalendarException[]>([])
-  const [date, setDate] = useState('')
-  const [type, setType] = useState<'holiday' | 'optional_day'>('optional_day')
-  const [description, setDescription] = useState('')
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -26,17 +31,40 @@ export function CalendarPage() {
 
   useEffect(load, [])
 
+  const resetForm = () => {
+    setForm(EMPTY_FORM)
+    setEditingId(null)
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
     setError(null)
+    const payload = {
+      date: form.date,
+      type: form.type,
+      description: form.description.trim(),
+    }
     try {
-      await api.createException({ date, type, description: description.trim() })
-      setDate('')
-      setDescription('')
+      if (editingId) {
+        await api.updateException(editingId, payload)
+      } else {
+        await api.createException(payload)
+      }
+      resetForm()
       load()
     } catch (err) {
       setError((err as Error).message)
     }
+  }
+
+  const edit = (row: CalendarException) => {
+    setEditingId(row.id)
+    setForm({
+      date: row.date,
+      type: row.type,
+      description: row.description,
+    })
+    setError(null)
   }
 
   return (
@@ -52,15 +80,21 @@ export function CalendarPage() {
         <form className="grid gap-3 md:grid-cols-3" onSubmit={submit}>
           <div>
             <Label htmlFor="date">Data</Label>
-            <Input id="date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+            <Input
+              id="date"
+              type="date"
+              value={form.date}
+              onChange={(e) => setForm({ ...form, date: e.target.value })}
+              required
+            />
           </div>
           <div>
             <Label htmlFor="type">Tipo</Label>
             <select
               id="type"
               className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
-              value={type}
-              onChange={(e) => setType(e.target.value as 'holiday' | 'optional_day')}
+              value={form.type}
+              onChange={(e) => setForm({ ...form, type: e.target.value as CalendarException['type'] })}
             >
               <option value="optional_day">Ponto facultativo</option>
               <option value="holiday">Feriado</option>
@@ -70,14 +104,19 @@ export function CalendarPage() {
             <Label htmlFor="desc">Descrição</Label>
             <Input
               id="desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={form.description}
+              onChange={(e) => setForm({ ...form, description: e.target.value })}
               placeholder="Ex.: TJMT"
               required
             />
           </div>
-          <div className="md:col-span-3">
-            <Button type="submit">Cadastrar exceção</Button>
+          <div className="flex flex-wrap gap-2 md:col-span-3">
+            <Button type="submit">{editingId ? 'Salvar alteração' : 'Cadastrar exceção'}</Button>
+            {editingId && (
+              <Button type="button" variant="secondary" onClick={resetForm}>
+                Cancelar
+              </Button>
+            )}
           </div>
         </form>
         {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
@@ -105,16 +144,22 @@ export function CalendarPage() {
                   <Td>{EXCEPTION_LABEL[row.type]}</Td>
                   <Td>{row.description}</Td>
                   <Td className="text-right">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={async () => {
-                        await api.deleteException(row.id)
-                        load()
-                      }}
-                    >
-                      Remover
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button size="sm" variant="secondary" onClick={() => edit(row)}>
+                        Alterar
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          await api.deleteException(row.id)
+                          if (editingId === row.id) resetForm()
+                          load()
+                        }}
+                      >
+                        Remover
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}

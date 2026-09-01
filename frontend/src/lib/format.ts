@@ -52,6 +52,17 @@ export function formatDate(value: string): string {
   return `${day}/${month}/${year}`
 }
 
+export function formatDateTime(value: string): string {
+  const date = new Date(value)
+  return date.toLocaleString('pt-BR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function formatDateWithWeekday(value: string): string {
   const [year, month, day] = value.split('-').map(Number)
   const date = new Date(year, month - 1, day)

@@ -302,6 +302,7 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
                   #{task.task_id} — {task.title}
                 </p>
                 <p className="text-sm text-muted">
+                  {task.activity_category ? `${task.activity_category} · ` : ''}
                   {task.completed_hours != null ? formatHours(task.completed_hours) : 'Horas não informadas'}
                   {task.state ? ` · ${formatAzureState(task.state)}` : ''}
                 </p>

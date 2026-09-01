@@ -177,3 +177,23 @@ def test_justified_absence_removes_missing_and_expected_hours() -> None:
     assert summary.missing == without.missing - 1
     assert summary.justified_absence == 1
     assert summary.expected == without.expected - q(8)
+
+
+def test_team_daily_adherence_aggregates_obligated_days() -> None:
+    from app.analysis.engine import analyze_team, team_daily_adherence
+
+    summaries = analyze_team(
+        [person(id=1), person(id=2, name="Maria", azure_name="Maria")],
+        [
+            task(date(2026, 8, 4), Decimal("8"), "1"),
+            task(date(2026, 8, 4), Decimal("4"), "2"),
+        ],
+        set(),
+        2026,
+        8,
+        TODAY,
+    )
+    daily = team_daily_adherence(summaries)
+    day = next(item for item in daily if item["date"] == date(2026, 8, 4))
+    assert day["collaborators"] == 2
+    assert day["adherence"] == q(75)

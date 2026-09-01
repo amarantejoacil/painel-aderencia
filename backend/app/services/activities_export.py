@@ -20,6 +20,7 @@ HEADERS = [
     "ID",
     "Data da Atividade",
     "Título",
+    "Atividade",
     "Atribuído para",
     "Status da Atividade",
     "Horas Executadas",
@@ -32,8 +33,9 @@ COLUMN_WIDTHS = {
     "B": 16,
     "C": 48,
     "D": 28,
-    "E": 22,
-    "F": 16,
+    "E": 28,
+    "F": 22,
+    "G": 16,
 }
 
 
@@ -133,10 +135,13 @@ def build_activities_workbook(activities: list[Activity]) -> BytesIO:
         title_cell = worksheet.cell(row=row_index, column=3, value=activity.title)
         title_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        worksheet.cell(row=row_index, column=4, value=assignee_label(activity))
-        worksheet.cell(row=row_index, column=5, value=translate_azure_state(activity.state))
+        category_cell = worksheet.cell(row=row_index, column=4, value=activity.activity_category)
+        category_cell.alignment = Alignment(wrap_text=True, vertical="top")
 
-        hours_cell = worksheet.cell(row=row_index, column=6, value=_hours_value(activity.completed_hours))
+        worksheet.cell(row=row_index, column=5, value=assignee_label(activity))
+        worksheet.cell(row=row_index, column=6, value=translate_azure_state(activity.state))
+
+        hours_cell = worksheet.cell(row=row_index, column=7, value=_hours_value(activity.completed_hours))
         if hours_cell.value is not None:
             hours_cell.number_format = "0.00"
             hours_cell.alignment = Alignment(horizontal="right")
@@ -146,7 +151,7 @@ def build_activities_workbook(activities: list[Activity]) -> BytesIO:
     for column, width in COLUMN_WIDTHS.items():
         worksheet.column_dimensions[column].width = width
 
-    worksheet.auto_filter.ref = f"A1:F{max(1, len(activities) + 1)}"
+    worksheet.auto_filter.ref = f"A1:G{max(1, len(activities) + 1)}"
     worksheet.freeze_panes = "A2"
 
     buffer = BytesIO()

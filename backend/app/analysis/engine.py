@@ -49,6 +49,7 @@ class ActivityInput:
     completed_hours: Decimal | None
     state: str | None = None
     project: str | None = None
+    activity_category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,7 @@ class DayTask:
     completed_hours: Decimal | None
     state: str | None
     project: str | None
+    activity_category: str | None = None
 
 
 @dataclass
@@ -195,6 +197,7 @@ def analyze_collaborator(
                         completed_hours=q(task.completed_hours) if task.completed_hours is not None else None,
                         state=task.state,
                         project=task.project,
+                        activity_category=task.activity_category,
                     )
                     for task in sorted(day_tasks, key=lambda item: item.task_id)
                 ],
@@ -224,6 +227,7 @@ def analyze_collaborator(
                     completed_hours=q(task.completed_hours) if task.completed_hours is not None else None,
                     state=task.state,
                     project=task.project,
+                    activity_category=task.activity_category,
                 )
                 for task in sorted(day_tasks, key=lambda item: item.task_id)
             ],
@@ -310,3 +314,36 @@ def team_indicators(summaries: list[CollaboratorSummary]) -> dict:
         "missing": sum(row.missing for row in summaries),
         "excess": sum(row.excess for row in summaries),
     }
+
+
+def team_daily_adherence(summaries: list[CollaboratorSummary]) -> list[dict]:
+    totals: dict[date, tuple[Decimal, Decimal, int]] = {}
+    for summary in summaries:
+        for day in summary.days:
+            if day.expected <= 0:
+                continue
+            expected, capped, count = totals.get(day.date, (Decimal("0"), Decimal("0"), 0))
+            totals[day.date] = (
+                q(expected + day.expected),
+                q(capped + adherence_hours(day.executed, day.expected)),
+                count + 1,
+            )
+
+    result: list[dict] = []
+    for day_date in sorted(totals):
+        total_expected, total_capped, collaborators = totals[day_date]
+        if total_expected > 0:
+            ratio = min(
+                (total_capped / total_expected * Decimal("100")).quantize(QUANT, rounding=ROUND_HALF_UP),
+                q(100),
+            )
+        else:
+            ratio = q(100)
+        result.append(
+            {
+                "date": day_date,
+                "adherence": ratio,
+                "collaborators": collaborators,
+            }
+        )
+    return result

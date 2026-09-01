@@ -40,6 +40,7 @@ def _day_out(day) -> DayResultOut:
                 completed_hours=task.completed_hours,
                 state=task.state,
                 project=task.project,
+                activity_category=task.activity_category,
             )
             for task in day.tasks
         ],

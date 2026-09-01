@@ -28,6 +28,27 @@ def create_exception(payload: CalendarExceptionCreate, db: Session = Depends(get
     return item
 
 
+@router.put("/{exception_id}", response_model=CalendarExceptionOut)
+def update_exception(
+    exception_id: int,
+    payload: CalendarExceptionCreate,
+    db: Session = Depends(get_db),
+) -> CalendarException:
+    item = db.get(CalendarException, exception_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Exceção não encontrada.")
+    item.date = payload.date
+    item.type = payload.type
+    item.description = payload.description
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe uma exceção cadastrada nesta data.")
+    db.refresh(item)
+    return item
+
+
 @router.delete("/{exception_id}", status_code=204)
 def delete_exception(exception_id: int, db: Session = Depends(get_db)) -> None:
     item = db.get(CalendarException, exception_id)

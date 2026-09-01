@@ -16,6 +16,17 @@ HOURS_CSV = b"""ID,Title,Assigned To,Data refer\xc3\xaancia,Completed Work,State
 """
 
 
+ACTIVITY_CSV = b"""Work Item Type,ID,Data refer\xc3\xaancia,Title,Assigned To,State,Atividade
+"Task","3846","03/08/2026 00:00:00","Onboarding","Alisson de Souza Louly <PJMT\\05172210121>","Closed","Desenvolvimento"
+"Task","3847","04/08/2026 00:00:00","Estudo","Alisson de Souza Louly <PJMT\\05172210121>","Closed","Capacita\xc3\xa7\xc3\xa3o"
+"""
+
+
+def test_parse_activity_category_column() -> None:
+    result = parse_csv(ACTIVITY_CSV)
+    assert [item.activity_category for item in result.activities] == ["Desenvolvimento", "Capacitação"]
+
+
 def test_parse_relatorio_contrato() -> None:
     result = parse_csv(SAMPLE)
     assert len(result.activities) == 2

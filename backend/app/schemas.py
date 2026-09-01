@@ -64,6 +64,24 @@ class ImportWarning(BaseModel):
     row: int | None = None
 
 
+class ImportPeriodSummary(BaseModel):
+    year: int
+    month: int
+    count: int
+
+
+class ImportPreviewOut(BaseModel):
+    filename: str
+    row_count: int
+    year: int
+    month: int
+    min_date: date
+    max_date: date
+    primary_count: int
+    outside_primary_count: int
+    periods: list[ImportPeriodSummary] = []
+
+
 class ImportOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -74,6 +92,8 @@ class ImportOut(BaseModel):
     unmapped_count: int
     warning_count: int
     status: str
+    reference_year: int | None = None
+    reference_month: int | None = None
     warnings: list[ImportWarning] = []
 
 
@@ -83,6 +103,7 @@ class DayTaskOut(BaseModel):
     completed_hours: Decimal | None
     state: str | None
     project: str | None
+    activity_category: str | None = None
 
 
 class DayResultOut(BaseModel):
@@ -111,11 +132,22 @@ class CollaboratorSummaryOut(BaseModel):
     justified_absence: int
 
 
+class DailyAdherenceOut(BaseModel):
+    date: date
+    adherence: Decimal
+    collaborators: int
+
+
+class DashboardRowOut(CollaboratorSummaryOut):
+    days: list[DayResultOut] = []
+
+
 class DashboardOut(BaseModel):
     year: int
     month: int
     indicators: dict
-    rows: list[CollaboratorSummaryOut]
+    rows: list[DashboardRowOut]
+    daily_adherence: list[DailyAdherenceOut] = []
 
 
 class CollaboratorAnalysisOut(BaseModel):

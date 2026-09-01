@@ -1,10 +1,51 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { DashboardCharts } from '@/components/DashboardCharts'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Table, Td, Th } from '@/components/ui/table'
 import { api, type Collaborator, type Dashboard } from '@/lib/api'
 import { currentYearMonth, formatHours, formatPercent, monthLabel, STATUS_LABEL } from '@/lib/format'
+
+type StrategicIndicators = {
+  teamComplianceRate: number
+  okCollaborators: number
+  needsReview: number
+  avgAdherence: number
+  fullAdherence: number
+  compliantDayRate: number
+  launchCoverage: number
+  hoursGap: number
+  mandatoryDays: number
+}
+
+function computeStrategicIndicators(data: Dashboard): StrategicIndicators {
+  const { indicators, rows } = data
+  const totalCollaborators = rows.length
+  const okCollaborators = rows.filter(
+    (row) => row.missing === 0 && row.incomplete === 0 && row.excess === 0,
+  ).length
+  const fullAdherence = rows.filter((row) => Number(row.adherence) >= 100).length
+  const mandatoryDays =
+    indicators.regular + indicators.incomplete + indicators.missing + indicators.excess
+  const daysWithLaunch = indicators.regular + indicators.incomplete + indicators.excess
+  const avgAdherence =
+    totalCollaborators > 0
+      ? rows.reduce((sum, row) => sum + Number(row.adherence), 0) / totalCollaborators
+      : 0
+
+  return {
+    teamComplianceRate: totalCollaborators > 0 ? (okCollaborators / totalCollaborators) * 100 : 0,
+    okCollaborators,
+    needsReview: totalCollaborators - okCollaborators,
+    avgAdherence,
+    fullAdherence,
+    compliantDayRate: mandatoryDays > 0 ? (indicators.regular / mandatoryDays) * 100 : 100,
+    launchCoverage: mandatoryDays > 0 ? (daysWithLaunch / mandatoryDays) * 100 : 100,
+    hoursGap: Math.max(0, Number(indicators.expected_hours) - Number(indicators.executed_hours)),
+    mandatoryDays,
+  }
+}
 
 export function DashboardPage() {
   const initial = currentYearMonth()
@@ -46,6 +87,10 @@ export function DashboardPage() {
   }, [year, month, collaboratorId, status])
 
   const indicators = data?.indicators
+  const strategic = useMemo(
+    () => (data ? computeStrategicIndicators(data) : null),
+    [data],
+  )
 
   return (
     <div className="space-y-6">
@@ -144,14 +189,47 @@ export function DashboardPage() {
       {!loading && data && indicators && (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Metric title="Colaboradores analisados" value={String(indicators.collaborators)} />
-            <Metric title="Horas esperadas" value={formatHours(indicators.expected_hours)} />
-            <Metric title="Horas executadas" value={formatHours(indicators.executed_hours)} />
-            <Metric title="Aderência de Horas" value={formatPercent(indicators.adherence)} accent />
-            <Metric title="Dias regulares" value={String(indicators.regular)} />
-            <Metric title="Dias incompletos" value={String(indicators.incomplete)} />
-            <Metric title="Dias sem lançamento" value={String(indicators.missing)} />
-            <Metric title="Dias excedentes" value={String(indicators.excess)} />
+            <Metric
+              title="Colaboradores analisados"
+              value={String(indicators.collaborators)}
+              description="Colaboradores ativos incluídos na análise do mês, respeitando data de entrada e saída."
+            />
+            <Metric
+              title="Horas esperadas"
+              value={formatHours(indicators.expected_hours)}
+              description="Soma da carga diária em todos os dias úteis obrigatórios da equipe no período."
+            />
+            <Metric
+              title="Horas executadas"
+              value={formatHours(indicators.executed_hours)}
+              description="Total de horas lançadas nas Tasks importadas do Azure Boards."
+            />
+            <Metric
+              title="Aderência de Horas"
+              value={formatPercent(indicators.adherence)}
+              description="Conformidade dos lançamentos com a carga esperada, limitada a 100%. Não mede produtividade."
+              accent
+            />
+            <Metric
+              title="Dias regulares"
+              value={String(indicators.regular)}
+              description="Dias em que as horas executadas foram iguais à carga esperada."
+            />
+            <Metric
+              title="Dias incompletos"
+              value={String(indicators.incomplete)}
+              description="Dias com lançamento, porém com horas abaixo da carga esperada."
+            />
+            <Metric
+              title="Dias sem lançamento"
+              value={String(indicators.missing)}
+              description="Dias úteis obrigatórios sem nenhuma Task encontrada na importação."
+            />
+            <Metric
+              title="Dias excedentes"
+              value={String(indicators.excess)}
+              description="Dias com horas lançadas acima da carga esperada do colaborador."
+            />
           </div>
 
           <Card className="p-0">
@@ -195,17 +273,87 @@ export function DashboardPage() {
               </Table>
             )}
           </Card>
+
+          {strategic && data.rows.length > 0 && (
+            <section className="space-y-3">
+              <div>
+                <h3 className="text-lg font-semibold">Indicadores estratégicos</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Visão gerencial do período, derivada dos lançamentos importados e das regras de aderência.
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <Metric
+                  title="Conformidade da equipe"
+                  value={formatPercent(strategic.teamComplianceRate)}
+                  description={`${strategic.okCollaborators} de ${data.rows.length} colaborador(es) sem inconsistências (sem lançamento, incompleto ou excedente).`}
+                  accent={strategic.teamComplianceRate >= 80}
+                />
+                <Metric
+                  title="Requerem revisão"
+                  value={String(strategic.needsReview)}
+                  description="Colaboradores com ao menos uma inconsistência no mês analisado."
+                  warn={strategic.needsReview > 0}
+                />
+                <Metric
+                  title="Aderência média individual"
+                  value={formatPercent(strategic.avgAdherence)}
+                  description="Média aritmética da aderência de cada colaborador no período."
+                />
+                <Metric
+                  title="Aderência plena"
+                  value={String(strategic.fullAdherence)}
+                  description={`Colaboradores com aderência de 100% entre ${data.rows.length} analisado(s).`}
+                />
+                <Metric
+                  title="Taxa de dias conformes"
+                  value={formatPercent(strategic.compliantDayRate)}
+                  description={`${indicators.regular} dia(s) regulares entre ${strategic.mandatoryDays} dia(s) úteis obrigatórios da equipe.`}
+                />
+                <Metric
+                  title="Cobertura de lançamentos"
+                  value={formatPercent(strategic.launchCoverage)}
+                  description="Percentual de dias obrigatórios com ao menos uma Task registrada na importação."
+                />
+                <Metric
+                  title="Déficit acumulado de horas"
+                  value={formatHours(strategic.hoursGap)}
+                  description="Diferença entre horas esperadas e executadas no período (não compensa entre dias)."
+                  warn={strategic.hoursGap > 0}
+                />
+              </div>
+            </section>
+          )}
+
+          {data.rows.length > 0 && <DashboardCharts data={data} />}
         </>
       )}
     </div>
   )
 }
 
-function Metric({ title, value, accent }: { title: string; value: string; accent?: boolean }) {
+function Metric({
+  title,
+  value,
+  description,
+  accent,
+  warn,
+}: {
+  title: string
+  value: string
+  description: string
+  accent?: boolean
+  warn?: boolean
+}) {
   return (
-    <Card className={accent ? 'bg-accent-soft' : undefined}>
+    <Card
+      className={
+        accent ? 'bg-accent-soft' : warn ? 'border-amber-200 bg-amber-50/60' : undefined
+      }
+    >
       <p className="text-xs uppercase tracking-wide text-muted">{title}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
+      <p className="mt-2 text-xs leading-relaxed text-muted">{description}</p>
     </Card>
   )
 }

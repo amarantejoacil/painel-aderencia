@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
+from app.db_migrations import ensure_schema
 from app.routers import activities_export, calendar_exceptions, collaborator_absences, collaborators, dashboard, imports, inconsistencies_report
 from app.seed import seed_if_empty
 
@@ -12,6 +13,7 @@ from app.seed import seed_if_empty
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_schema(engine)
     db = SessionLocal()
     try:
         seed_if_empty(db)

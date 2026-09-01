@@ -61,6 +61,8 @@ class ImportBatch(Base):
     unmapped_count: Mapped[int] = mapped_column(default=0)
     warning_count: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String(30), default="success")
+    reference_year: Mapped[int | None] = mapped_column(nullable=True)
+    reference_month: Mapped[int | None] = mapped_column(nullable=True)
     warnings: Mapped[list] = mapped_column(JSONB, default=list)
 
     activities: Mapped[list["Activity"]] = relationship(
@@ -85,6 +87,7 @@ class Activity(Base):
     completed_hours: Mapped[Decimal | None] = mapped_column(Numeric(8, 2), nullable=True)
     state: Mapped[str | None] = mapped_column(String(80), nullable=True)
     project: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    activity_category: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     import_batch: Mapped[ImportBatch] = relationship(back_populates="activities")
     collaborator: Mapped[Collaborator | None] = relationship(back_populates="activities")

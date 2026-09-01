@@ -33,6 +33,7 @@ def load_activity_inputs(db: Session) -> list[ActivityInput]:
             completed_hours=row.completed_hours,
             state=row.state,
             project=row.project,
+            activity_category=row.activity_category,
         )
         for row in rows
     ]

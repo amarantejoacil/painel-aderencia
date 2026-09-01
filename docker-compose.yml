@@ -17,6 +17,7 @@ services:
   api:
     build:
       context: ./backend
+      pull: false
     environment:
       DATABASE_URL: postgresql+psycopg2://aderencia:aderencia@db:5432/aderencia
       CORS_ORIGINS: http://127.0.0.1:43123,http://localhost:43123
@@ -30,6 +31,7 @@ services:
   web:
     build:
       context: ./frontend
+      pull: false
     ports:
       - "43123:80"
     depends_on:
