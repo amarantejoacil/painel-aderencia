@@ -40,6 +40,38 @@ export function ImportPage() {
     void send(event.dataTransfer.files[0])
   }
 
+  const remove = async (importId: number) => {
+    const confirmed = window.confirm(
+      'Excluir esta importação? Todas as atividades importadas vinculadas a ela serão removidas do painel.',
+    )
+    if (!confirmed) return
+    setBusy(true)
+    setError(null)
+    try {
+      await api.deleteImport(importId)
+      setLatest(null)
+      setResult(null)
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const ImportActions = ({ item }: { item: ImportResult }) => (
+    <div className="mt-4 flex flex-wrap items-center gap-3">
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={busy}
+        onClick={() => void remove(item.id)}
+      >
+        Excluir importação
+      </Button>
+    </div>
+  )
+
   return (
     <div className="space-y-6">
       <div>
@@ -117,6 +149,7 @@ export function ImportPage() {
               ))}
             </ul>
           )}
+          <ImportActions item={result} />
         </Card>
       )}
 
@@ -126,6 +159,7 @@ export function ImportPage() {
           <p className="mt-1 text-sm text-muted">
             {latest.filename} · {latest.row_count} atividades · {latest.mapped_count} mapeadas
           </p>
+          <ImportActions item={latest} />
         </Card>
       )}
     </div>

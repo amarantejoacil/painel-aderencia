@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Table, Td, Th } from '@/components/ui/table'
 import { api, type Collaborator, type Dashboard } from '@/lib/api'
@@ -48,11 +49,31 @@ export function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold">Aderência de Horas · {monthLabel(year, month)}</h2>
-        <p className="mt-1 text-sm text-muted">
-          A conferência é feita por colaborador e por dia. Horas a mais em um dia não compensam outro.
-        </p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-2xl font-semibold">Aderência de Horas · {monthLabel(year, month)}</h2>
+          <p className="mt-1 text-sm text-muted">
+            A conferência é feita por colaborador e por dia. Horas a mais em um dia não compensam outro.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link to={`/relatorio-inconsistencias?year=${year}&month=${month}`}>
+            <Button type="button" variant="secondary">
+              Relatório de Inconsistências
+            </Button>
+          </Link>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => {
+              const query = new URLSearchParams({ year: String(year), month: String(month) })
+              if (collaboratorId) query.set('collaborator_id', collaboratorId)
+              window.open(`/api/activities/export?${query}`, '_blank')
+            }}
+          >
+            Exportar Excel
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-4">

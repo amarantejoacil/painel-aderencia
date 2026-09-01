@@ -1,5 +1,10 @@
 from pathlib import Path
 
+from sqlalchemy import func, select
+
+from app.models import Activity, ImportBatch
+from tests.conftest import TestingSession
+
 SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "relatorio-contrato-exemplo.csv"
 
 
@@ -12,3 +17,25 @@ def test_import_sample_csv_reports_unmapped_people(client) -> None:
     assert body["unmapped_count"] == 13
     assert any(item["kind"] == "hours_absent" for item in body["warnings"])
     assert any(item["kind"] == "unmapped" for item in body["warnings"])
+
+
+def test_delete_import_removes_linked_activities(client) -> None:
+    with SAMPLE.open("rb") as handle:
+        created = client.post("/api/imports", files={"file": ("exemplo.csv", handle, "text/csv")})
+    import_id = created.json()["id"]
+
+    response = client.delete(f"/api/imports/{import_id}")
+    assert response.status_code == 204
+    assert client.get("/api/imports/latest").json() is None
+
+    db = TestingSession()
+    try:
+        assert db.get(ImportBatch, import_id) is None
+        assert db.scalar(select(func.count()).select_from(Activity)) == 0
+    finally:
+        db.close()
+
+
+def test_delete_import_returns_404_for_unknown_id(client) -> None:
+    response = client.delete("/api/imports/99999")
+    assert response.status_code == 404

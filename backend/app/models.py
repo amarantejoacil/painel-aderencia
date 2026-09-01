@@ -20,6 +20,24 @@ class Collaborator(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     activities: Mapped[list["Activity"]] = relationship(back_populates="collaborator")
+    absences: Mapped[list["CollaboratorAbsence"]] = relationship(
+        back_populates="collaborator", cascade="all, delete-orphan"
+    )
+
+
+class CollaboratorAbsence(Base):
+    __tablename__ = "collaborator_absences"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    collaborator_id: Mapped[int] = mapped_column(
+        ForeignKey("collaborators.id", ondelete="CASCADE"), index=True
+    )
+    type: Mapped[str] = mapped_column(String(30))
+    start_date: Mapped[date] = mapped_column(Date, index=True)
+    end_date: Mapped[date] = mapped_column(Date, index=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    collaborator: Mapped[Collaborator] = relationship(back_populates="absences")
 
 
 class CalendarException(Base):
@@ -45,7 +63,9 @@ class ImportBatch(Base):
     status: Mapped[str] = mapped_column(String(30), default="success")
     warnings: Mapped[list] = mapped_column(JSONB, default=list)
 
-    activities: Mapped[list["Activity"]] = relationship(back_populates="import_batch")
+    activities: Mapped[list["Activity"]] = relationship(
+        back_populates="import_batch", cascade="all, delete-orphan"
+    )
 
 
 class Activity(Base):

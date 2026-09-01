@@ -1,18 +1,16 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.analysis.engine import (
-    ActivityInput,
     CollaboratorInput,
     analyze_collaborator,
     analyze_team,
     team_indicators,
 )
 from app.database import get_db
-from app.models import Activity, CalendarException, Collaborator, ImportBatch
+from app.models import Collaborator
 from app.schemas import (
     CollaboratorAnalysisOut,
     CollaboratorOut,
@@ -21,43 +19,15 @@ from app.schemas import (
     DayResultOut,
     DayTaskOut,
 )
+from app.services.analysis_context import (
+    load_activity_inputs,
+    load_collaborator_absences,
+    load_collaborator_inputs,
+    load_exception_dates,
+    to_collaborator_input,
+)
 
 router = APIRouter(tags=["dashboard"])
-
-
-def _to_input(item: Collaborator) -> CollaboratorInput:
-    return CollaboratorInput(
-        id=item.id,
-        name=item.name,
-        azure_name=item.azure_name,
-        start_date=item.start_date,
-        end_date=item.end_date,
-        daily_hours=item.daily_hours,
-        active=item.active,
-    )
-
-
-def _activity_inputs(db: Session) -> list[ActivityInput]:
-    latest = db.scalars(select(ImportBatch).order_by(ImportBatch.imported_at.desc())).first()
-    if not latest:
-        return []
-    rows = db.scalars(select(Activity).where(Activity.import_id == latest.id)).all()
-    return [
-        ActivityInput(
-            task_id=row.task_id,
-            title=row.title,
-            collaborator_id=row.collaborator_id,
-            work_date=row.work_date,
-            completed_hours=row.completed_hours,
-            state=row.state,
-            project=row.project,
-        )
-        for row in rows
-    ]
-
-
-def _exceptions(db: Session) -> set[date]:
-    return set(db.scalars(select(CalendarException.date)).all())
 
 
 def _summary_out(summary) -> CollaboratorSummaryOut:
@@ -81,6 +51,7 @@ def _summary_out(summary) -> CollaboratorSummaryOut:
         missing=summary.missing,
         excess=summary.excess,
         not_required=summary.not_required,
+        justified_absence=summary.justified_absence,
     )
 
 
@@ -92,18 +63,19 @@ def get_dashboard(
     status: str | None = None,
     db: Session = Depends(get_db),
 ) -> DashboardOut:
-    collaborators = [_to_input(item) for item in db.scalars(select(Collaborator)).all()]
+    collaborators = load_collaborator_inputs(db)
     if collaborator_id is not None:
         collaborators = [item for item in collaborators if item.id == collaborator_id]
         if not collaborators:
             raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
     summaries = analyze_team(
         collaborators,
-        _activity_inputs(db),
-        _exceptions(db),
+        load_activity_inputs(db),
+        load_exception_dates(db),
         year,
         month,
         date.today(),
+        load_collaborator_absences(db),
     )
     if status:
         summaries = [
@@ -130,12 +102,13 @@ def get_collaborator_analysis(
     if not collaborator:
         raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
     summary = analyze_collaborator(
-        _to_input(collaborator),
-        _activity_inputs(db),
-        _exceptions(db),
+        to_collaborator_input(collaborator),
+        load_activity_inputs(db),
+        load_exception_dates(db),
         year,
         month,
         date.today(),
+        load_collaborator_absences(db).get(collaborator_id, {}),
     )
     days = [
         DayResultOut(
@@ -146,6 +119,8 @@ def get_collaborator_analysis(
             status=day.status,
             hours_source=day.hours_source,
             task_count=day.task_count,
+            absence_type=day.absence_type,
+            absence_note=day.absence_note,
             tasks=[
                 DayTaskOut(
                     task_id=task.task_id,

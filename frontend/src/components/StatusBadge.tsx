@@ -7,6 +7,7 @@ const STYLES: Record<string, string> = {
   missing: 'bg-red-50 text-red-800',
   excess: 'bg-orange-50 text-orange-800',
   not_required: 'bg-slate-100 text-slate-600',
+  justified_absence: 'bg-blue-50 text-blue-800',
 }
 
 export function StatusBadge({ status }: { status: string }) {

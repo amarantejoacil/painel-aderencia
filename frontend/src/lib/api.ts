@@ -77,6 +77,17 @@ export type DayResult = {
   hours_source: string
   task_count: number
   tasks: DayTask[]
+  absence_type?: string | null
+  absence_note?: string | null
+}
+
+export type CollaboratorAbsence = {
+  id: number
+  collaborator_id: number
+  type: 'medical_certificate' | 'vacation' | 'day_off' | 'leave' | 'other'
+  start_date: string
+  end_date: string
+  note: string | null
 }
 
 export type CollaboratorSummary = {
@@ -89,6 +100,7 @@ export type CollaboratorSummary = {
   missing: number
   excess: number
   not_required: number
+  justified_absence: number
 }
 
 export type Dashboard = {
@@ -112,6 +124,31 @@ export type CollaboratorAnalysis = {
   days: DayResult[]
 }
 
+export type InconsistenciesReportRow = {
+  collaborator: Collaborator
+  situation: 'ok' | 'pending'
+  adherence: number | string
+  missing: number
+  incomplete: number
+  excess: number
+  summary_text: string
+  pending_days: DayResult[]
+}
+
+export type InconsistenciesReport = {
+  year: number
+  month: number
+  indicators: {
+    collaborators: number
+    ok: number
+    with_issues: number
+    missing: number
+    incomplete: number
+    excess: number
+  }
+  rows: InconsistenciesReportRow[]
+}
+
 export const api = {
   health: () => request<{ status: string }>('/health'),
   listCollaborators: () => request<Collaborator[]>('/collaborators'),
@@ -127,6 +164,7 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteException: (id: number) => request<void>(`/calendar-exceptions/${id}`, { method: 'DELETE' }),
+  deleteImport: (id: number) => request<void>(`/imports/${id}`, { method: 'DELETE' }),
   latestImport: () => request<ImportResult | null>('/imports/latest'),
   uploadImport: async (file: File) => {
     const body = new FormData()
@@ -141,4 +179,27 @@ export const api = {
   },
   analysis: (id: number, year: number, month: number) =>
     request<CollaboratorAnalysis>(`/collaborators/${id}/analysis?year=${year}&month=${month}`),
+  listAbsences: (collaboratorId: number) =>
+    request<CollaboratorAbsence[]>(`/collaborators/${collaboratorId}/absences`),
+  createAbsence: (
+    collaboratorId: number,
+    payload: Omit<CollaboratorAbsence, 'id' | 'collaborator_id'>,
+  ) =>
+    request<CollaboratorAbsence>(`/collaborators/${collaboratorId}/absences`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteAbsence: (collaboratorId: number, absenceId: number) =>
+    request<void>(`/collaborators/${collaboratorId}/absences/${absenceId}`, { method: 'DELETE' }),
+  inconsistenciesReport: (params: {
+    year: number
+    month: number
+    situation?: 'ok' | 'pending'
+    issue_type?: 'missing' | 'incomplete' | 'excess'
+  }) => {
+    const query = new URLSearchParams({ year: String(params.year), month: String(params.month) })
+    if (params.situation) query.set('situation', params.situation)
+    if (params.issue_type) query.set('issue_type', params.issue_type)
+    return request<InconsistenciesReport>(`/inconsistencies-report?${query}`)
+  },
 }

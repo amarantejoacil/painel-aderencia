@@ -5,6 +5,7 @@ import { CollaboratorDetailPage } from '@/pages/CollaboratorDetailPage'
 import { CollaboratorsPage } from '@/pages/CollaboratorsPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { ImportPage } from '@/pages/ImportPage'
+import { InconsistenciesReportPage } from '@/pages/InconsistenciesReportPage'
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
       <Routes>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
+          <Route path="relatorio-inconsistencias" element={<InconsistenciesReportPage />} />
           <Route path="importacao" element={<ImportPage />} />
           <Route path="colaboradores" element={<CollaboratorsPage />} />
           <Route path="colaboradores/:id" element={<CollaboratorDetailPage />} />

@@ -10,6 +10,7 @@ STATUS_INCOMPLETE = "incomplete"
 STATUS_MISSING = "missing"
 STATUS_EXCESS = "excess"
 STATUS_NOT_REQUIRED = "not_required"
+STATUS_JUSTIFIED_ABSENCE = "justified_absence"
 
 HOURS_LOGGED = "logged"
 HOURS_PRESENCE = "presence"
@@ -20,6 +21,12 @@ QUANT = Decimal("0.01")
 
 def q(value: Decimal | int | float | str) -> Decimal:
     return Decimal(str(value)).quantize(QUANT, rounding=ROUND_HALF_UP)
+
+
+@dataclass(frozen=True)
+class AbsenceInput:
+    type: str
+    note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -63,6 +70,8 @@ class DayResult:
     hours_source: str
     task_count: int
     tasks: list[DayTask] = field(default_factory=list)
+    absence_type: str | None = None
+    absence_note: str | None = None
 
 
 @dataclass
@@ -76,6 +85,7 @@ class CollaboratorSummary:
     missing: int
     excess: int
     not_required: int
+    justified_absence: int
     days: list[DayResult]
 
 
@@ -144,7 +154,9 @@ def analyze_collaborator(
     year: int,
     month: int,
     today: date,
+    collaborator_absences: dict[date, AbsenceInput] | None = None,
 ) -> CollaboratorSummary:
+    absences = collaborator_absences or {}
     by_date: dict[date, list[ActivityInput]] = {}
     for activity in activities:
         if activity.collaborator_id != collaborator.id:
@@ -161,9 +173,38 @@ def analyze_collaborator(
         STATUS_MISSING: 0,
         STATUS_EXCESS: 0,
         STATUS_NOT_REQUIRED: 0,
+        STATUS_JUSTIFIED_ABSENCE: 0,
     }
 
     for day in month_days(year, month):
+        absence = absences.get(day)
+        if absence is not None:
+            day_tasks = by_date.get(day, [])
+            result = DayResult(
+                date=day,
+                expected=q(0),
+                executed=q(0),
+                difference=q(0),
+                status=STATUS_JUSTIFIED_ABSENCE,
+                hours_source=HOURS_NONE,
+                task_count=len(day_tasks),
+                tasks=[
+                    DayTask(
+                        task_id=task.task_id,
+                        title=task.title,
+                        completed_hours=q(task.completed_hours) if task.completed_hours is not None else None,
+                        state=task.state,
+                        project=task.project,
+                    )
+                    for task in sorted(day_tasks, key=lambda item: item.task_id)
+                ],
+                absence_type=absence.type,
+                absence_note=absence.note,
+            )
+            days.append(result)
+            counts[STATUS_JUSTIFIED_ABSENCE] += 1
+            continue
+
         expected = expected_hours(collaborator, day, exception_dates, today)
         day_tasks = by_date.get(day, [])
         executed, source = executed_for_day(day_tasks, collaborator.daily_hours)
@@ -209,6 +250,7 @@ def analyze_collaborator(
         missing=counts[STATUS_MISSING],
         excess=counts[STATUS_EXCESS],
         not_required=counts[STATUS_NOT_REQUIRED],
+        justified_absence=counts[STATUS_JUSTIFIED_ABSENCE],
         days=days,
     )
 
@@ -220,9 +262,11 @@ def analyze_team(
     year: int,
     month: int,
     today: date,
+    all_absences: dict[int, dict[date, AbsenceInput]] | None = None,
 ) -> list[CollaboratorSummary]:
     first = date(year, month, 1)
     last = date(year, month, monthrange(year, month)[1])
+    absences = all_absences or {}
     eligible: list[CollaboratorSummary] = []
     for collaborator in collaborators:
         if not collaborator.active:
@@ -233,7 +277,13 @@ def analyze_team(
             continue
         eligible.append(
             analyze_collaborator(
-                collaborator, activities, exception_dates, year, month, today
+                collaborator,
+                activities,
+                exception_dates,
+                year,
+                month,
+                today,
+                absences.get(collaborator.id, {}),
             )
         )
     return eligible

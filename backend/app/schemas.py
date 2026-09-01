@@ -31,6 +31,22 @@ class CollaboratorOut(CollaboratorBase):
     id: int
 
 
+ABSENCE_TYPES = "medical_certificate|vacation|day_off|leave|other"
+
+
+class CollaboratorAbsenceCreate(BaseModel):
+    type: str = Field(pattern=f"^({ABSENCE_TYPES})$")
+    start_date: date
+    end_date: date
+    note: str | None = Field(default=None, max_length=500)
+
+
+class CollaboratorAbsenceOut(CollaboratorAbsenceCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    collaborator_id: int
+
+
 class CalendarExceptionCreate(BaseModel):
     date: date
     type: str = Field(pattern="^(holiday|optional_day)$")
@@ -78,6 +94,8 @@ class DayResultOut(BaseModel):
     hours_source: str
     task_count: int
     tasks: list[DayTaskOut] = []
+    absence_type: str | None = None
+    absence_note: str | None = None
 
 
 class CollaboratorSummaryOut(BaseModel):
@@ -90,6 +108,7 @@ class CollaboratorSummaryOut(BaseModel):
     missing: int
     excess: int
     not_required: int
+    justified_absence: int
 
 
 class DashboardOut(BaseModel):
@@ -102,3 +121,21 @@ class DashboardOut(BaseModel):
 class CollaboratorAnalysisOut(BaseModel):
     summary: CollaboratorSummaryOut
     days: list[DayResultOut]
+
+
+class MonthlyReportRowOut(BaseModel):
+    collaborator: CollaboratorOut
+    situation: str
+    adherence: Decimal
+    missing: int
+    incomplete: int
+    excess: int
+    summary_text: str
+    pending_days: list[DayResultOut] = []
+
+
+class MonthlyReportOut(BaseModel):
+    year: int
+    month: int
+    indicators: dict
+    rows: list[MonthlyReportRowOut]

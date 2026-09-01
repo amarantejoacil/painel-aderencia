@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import Base, SessionLocal, engine
-from app.routers import calendar_exceptions, collaborators, dashboard, imports
+from app.routers import activities_export, calendar_exceptions, collaborator_absences, collaborators, dashboard, imports, inconsistencies_report
 from app.seed import seed_if_empty
 
 
@@ -32,9 +32,12 @@ app.add_middleware(
 )
 
 app.include_router(collaborators.router, prefix="/api")
+app.include_router(collaborator_absences.router, prefix="/api")
 app.include_router(calendar_exceptions.router, prefix="/api")
 app.include_router(imports.router, prefix="/api")
+app.include_router(activities_export.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
+app.include_router(inconsistencies_report.router, prefix="/api")
 
 
 @app.get("/api/health")

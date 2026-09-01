@@ -1,10 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { StatusBadge } from '@/components/StatusBadge'
+import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Table, Td, Th } from '@/components/ui/table'
-import { api, type CollaboratorAnalysis, type DayResult } from '@/lib/api'
-import { currentYearMonth, formatDate, formatHours, formatPercent, monthLabel } from '@/lib/format'
+import { api, type CollaboratorAbsence, type CollaboratorAnalysis, type DayResult } from '@/lib/api'
+import {
+  ABSENCE_TYPE_LABEL,
+  currentYearMonth,
+  formatDate,
+  formatAzureState,
+  formatDateWithWeekday,
+  formatHours,
+  formatPercent,
+  isWeekendDate,
+  monthLabel,
+} from '@/lib/format'
+import { cn } from '@/lib/utils'
+
+const EMPTY_ABSENCE: {
+  type: CollaboratorAbsence['type']
+  start_date: string
+  end_date: string
+  note: string
+} = {
+  type: 'medical_certificate',
+  start_date: '',
+  end_date: '',
+  note: '',
+}
 
 export function CollaboratorDetailPage() {
   const { id } = useParams()
@@ -12,23 +38,47 @@ export function CollaboratorDetailPage() {
   const initial = currentYearMonth()
   const year = Number(params.get('year') ?? initial.year)
   const month = Number(params.get('month') ?? initial.month)
+  const collaboratorId = Number(id)
   const [data, setData] = useState<CollaboratorAnalysis | null>(null)
+  const [absences, setAbsences] = useState<CollaboratorAbsence[]>([])
+  const [form, setForm] = useState(EMPTY_ABSENCE)
   const [selected, setSelected] = useState<DayResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [absenceError, setAbsenceError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     if (!id) return
     setLoading(true)
-    api
-      .analysis(Number(id), year, month)
-      .then((result) => {
+    setError(null)
+    Promise.all([api.analysis(collaboratorId, year, month), api.listAbsences(collaboratorId)])
+      .then(([result, absenceRows]) => {
         setData(result)
+        setAbsences(absenceRows)
         setSelected(null)
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [id, year, month])
+  }, [collaboratorId, id, month, year])
+
+  useEffect(load, [load])
+
+  const submitAbsence = async (event: FormEvent) => {
+    event.preventDefault()
+    setAbsenceError(null)
+    try {
+      await api.createAbsence(collaboratorId, {
+        type: form.type,
+        start_date: form.start_date,
+        end_date: form.end_date || form.start_date,
+        note: form.note.trim() || null,
+      })
+      setForm(EMPTY_ABSENCE)
+      load()
+    } catch (err) {
+      setAbsenceError((err as Error).message)
+    }
+  }
 
   if (loading) return <Card className="text-muted">Carregando detalhe do colaborador…</Card>
   if (error) return <Card className="border-red-200 bg-red-50 text-red-800">{error}</Card>
@@ -67,6 +117,104 @@ export function CollaboratorDetailPage() {
         </Card>
       </div>
 
+      <Card>
+        <h3 className="text-lg font-semibold">Ausências / Exceções</h3>
+        <p className="mt-1 text-sm text-muted">
+          Registre ausências individuais do colaborador. Esses dias não exigem lançamento e não entram como inconsistência.
+        </p>
+        <form className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4" onSubmit={submitAbsence}>
+          <div>
+            <Label htmlFor="absence-type">Tipo</Label>
+            <select
+              id="absence-type"
+              className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+              value={form.type}
+              onChange={(event) =>
+                setForm({ ...form, type: event.target.value as CollaboratorAbsence['type'] })
+              }
+              required
+            >
+              {Object.entries(ABSENCE_TYPE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="absence-start">Data inicial</Label>
+            <Input
+              id="absence-start"
+              type="date"
+              value={form.start_date}
+              onChange={(event) => setForm({ ...form, start_date: event.target.value })}
+              required
+            />
+          </div>
+          <div>
+            <Label htmlFor="absence-end">Data final</Label>
+            <Input
+              id="absence-end"
+              type="date"
+              value={form.end_date}
+              onChange={(event) => setForm({ ...form, end_date: event.target.value })}
+              placeholder="Opcional para um único dia"
+            />
+          </div>
+          <div>
+            <Label htmlFor="absence-note">Observação</Label>
+            <Input
+              id="absence-note"
+              value={form.note}
+              onChange={(event) => setForm({ ...form, note: event.target.value })}
+              placeholder="Opcional"
+            />
+          </div>
+          <div className="md:col-span-2 lg:col-span-4">
+            <Button type="submit">Cadastrar ausência</Button>
+          </div>
+        </form>
+        {absenceError && <p className="mt-3 text-sm text-red-700">{absenceError}</p>}
+
+        {absences.length > 0 && (
+          <div className="mt-4 overflow-x-auto">
+            <Table>
+              <thead>
+                <tr>
+                  <Th>Tipo</Th>
+                  <Th>Início</Th>
+                  <Th>Fim</Th>
+                  <Th>Observação</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody>
+                {absences.map((row) => (
+                  <tr key={row.id}>
+                    <Td>{ABSENCE_TYPE_LABEL[row.type]}</Td>
+                    <Td>{formatDate(row.start_date)}</Td>
+                    <Td>{formatDate(row.end_date)}</Td>
+                    <Td>{row.note || '—'}</Td>
+                    <Td className="text-right">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={async () => {
+                          await api.deleteAbsence(collaboratorId, row.id)
+                          load()
+                        }}
+                      >
+                        Remover
+                      </Button>
+                    </Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        )}
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
         <Card className="p-0">
           <Table>
@@ -80,24 +228,41 @@ export function CollaboratorDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {data.days.map((day) => (
-                <tr
-                  key={day.date}
-                  className={`cursor-pointer hover:bg-paper/80 ${selected?.date === day.date ? 'bg-accent-soft' : ''}`}
-                  onClick={() => setSelected(day)}
-                >
-                  <Td className="font-medium">{formatDate(day.date)}</Td>
-                  <Td className="text-right">{formatHours(day.expected)}</Td>
-                  <Td className="text-right">{formatHours(day.executed)}</Td>
-                  <Td className="text-right">
-                    {Number(day.difference) > 0 ? '+' : ''}
-                    {formatHours(day.difference)}
-                  </Td>
-                  <Td>
-                    <StatusBadge status={day.status} />
-                  </Td>
-                </tr>
-              ))}
+              {data.days.map((day) => {
+                const weekend = isWeekendDate(day.date)
+                const absence = day.status === 'justified_absence'
+                return (
+                  <tr
+                    key={day.date}
+                    className={cn(
+                      'cursor-pointer',
+                      absence && 'bg-blue-50 hover:bg-blue-100',
+                      !absence && weekend && 'bg-red-50 hover:bg-red-100',
+                      !absence && !weekend && 'hover:bg-paper/80',
+                      selected?.date === day.date &&
+                        (absence
+                          ? 'bg-blue-100 ring-2 ring-inset ring-blue-200'
+                          : weekend
+                            ? 'bg-red-100 ring-2 ring-inset ring-red-200'
+                            : 'bg-accent-soft'),
+                    )}
+                    onClick={() => setSelected(day)}
+                  >
+                    <Td className={cn('font-medium', absence && 'text-blue-800', weekend && !absence && 'text-red-700')}>
+                      {formatDateWithWeekday(day.date)}
+                    </Td>
+                    <Td className="text-right">{formatHours(day.expected)}</Td>
+                    <Td className="text-right">{formatHours(day.executed)}</Td>
+                    <Td className="text-right">
+                      {Number(day.difference) > 0 ? '+' : ''}
+                      {formatHours(day.difference)}
+                    </Td>
+                    <Td>
+                      <StatusBadge status={day.status} />
+                    </Td>
+                  </tr>
+                )
+              })}
             </tbody>
           </Table>
         </Card>
@@ -110,15 +275,32 @@ export function CollaboratorDetailPage() {
             <div className="space-y-3">
               <div>
                 <h3 className="text-lg font-semibold">
-                  {formatDate(selected.date)} — {formatHours(selected.executed)}
+                  {formatDateWithWeekday(selected.date)} — {formatHours(selected.executed)}
                 </h3>
-                <p className="text-sm text-muted">
-                  {selected.task_count === 0
-                    ? 'Nenhuma Task lançada neste dia.'
-                    : selected.hours_source === 'presence'
-                      ? 'O CSV não trouxe horas. O dia foi considerado pela presença de Task.'
-                      : `Soma das horas executadas das ${selected.task_count} Task(s).`}
-                </p>
+                {selected.status === 'justified_absence' && selected.absence_type && (
+                  <p className="text-sm text-blue-800">
+                    Motivo: {ABSENCE_TYPE_LABEL[selected.absence_type] ?? selected.absence_type}
+                    {selected.absence_note ? ` · ${selected.absence_note}` : ''}
+                  </p>
+                )}
+                {isWeekendDate(selected.date) && selected.status !== 'justified_absence' && (
+                  <p className="text-sm text-red-700">Fim de semana — não exige lançamento de Tasks.</p>
+                )}
+                {selected.status === 'justified_absence' ? (
+                  <p className="text-sm text-muted">Ausência justificada — não exige lançamento de Tasks.</p>
+                ) : selected.status === 'missing' && selected.task_count === 0 ? (
+                  <p className="text-sm font-medium text-red-800">
+                    Não existe lançamento para este dia na importação do Azure Boards.
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted">
+                    {selected.task_count === 0
+                      ? 'Nenhuma Task lançada neste dia.'
+                      : selected.hours_source === 'presence'
+                        ? 'O CSV não trouxe horas. O dia foi considerado pela presença de Task.'
+                        : `Soma das horas executadas das ${selected.task_count} Task(s).`}
+                  </p>
+                )}
               </div>
               {selected.tasks.length === 0 ? (
                 <p className="text-sm text-muted">Sem atividades.</p>
@@ -131,13 +313,13 @@ export function CollaboratorDetailPage() {
                       </p>
                       <p className="text-sm text-muted">
                         {task.completed_hours != null ? formatHours(task.completed_hours) : 'Horas não informadas'}
-                        {task.state ? ` · ${task.state}` : ''}
+                        {task.state ? ` · ${formatAzureState(task.state)}` : ''}
                       </p>
                     </li>
                   ))}
                 </ul>
               )}
-              {selected.tasks.length > 0 && (
+              {selected.tasks.length > 0 && selected.status !== 'justified_absence' && (
                 <p className="text-sm font-medium">Total: {formatHours(selected.executed)}</p>
               )}
             </div>

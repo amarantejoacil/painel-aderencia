@@ -4,6 +4,33 @@ export const STATUS_LABEL: Record<string, string> = {
   missing: 'Sem lançamento',
   excess: 'Excedente',
   not_required: 'Não exigido',
+  justified_absence: 'Ausência justificada',
+}
+
+export const ABSENCE_TYPE_LABEL: Record<string, string> = {
+  medical_certificate: 'Atestado médico',
+  vacation: 'Férias',
+  day_off: 'Folga',
+  leave: 'Licença',
+  other: 'Outro',
+}
+
+export const AZURE_STATE_LABEL: Record<string, string> = {
+  closed: 'Concluído',
+  done: 'Concluído',
+  resolved: 'Resolvido',
+  active: 'Ativo',
+  new: 'Novo',
+  removed: 'Removido',
+  cut: 'Cortado',
+  inactive: 'Inativo',
+  'in progress': 'Em andamento',
+  inprogress: 'Em andamento',
+}
+
+export function formatAzureState(state: string | null | undefined): string {
+  if (!state?.trim()) return '—'
+  return AZURE_STATE_LABEL[state.trim().toLowerCase()] ?? state.trim()
 }
 
 export const EXCEPTION_LABEL: Record<string, string> = {
@@ -23,6 +50,20 @@ export function formatPercent(value: number | string): string {
 export function formatDate(value: string): string {
   const [year, month, day] = value.split('-')
   return `${day}/${month}/${year}`
+}
+
+export function formatDateWithWeekday(value: string): string {
+  const [year, month, day] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, day)
+  const weekday = date.toLocaleDateString('pt-BR', { weekday: 'long' })
+  const label = weekday.charAt(0).toUpperCase() + weekday.slice(1)
+  return `${formatDate(value)} · ${label}`
+}
+
+export function isWeekendDate(value: string): boolean {
+  const [year, month, day] = value.split('-').map(Number)
+  const weekday = new Date(year, month - 1, day).getDay()
+  return weekday === 0 || weekday === 6
 }
 
 export function currentYearMonth(): { year: number; month: number } {

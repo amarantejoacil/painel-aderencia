@@ -2,10 +2,12 @@ from datetime import date
 from decimal import Decimal
 
 from app.analysis.engine import (
+    AbsenceInput,
     ActivityInput,
     CollaboratorInput,
     STATUS_EXCESS,
     STATUS_INCOMPLETE,
+    STATUS_JUSTIFIED_ABSENCE,
     STATUS_MISSING,
     STATUS_NOT_REQUIRED,
     STATUS_REGULAR,
@@ -160,3 +162,18 @@ def test_future_days_not_required() -> None:
     )
     assert next(item for item in summary.days if item.date == date(2026, 8, 6)).status == STATUS_NOT_REQUIRED
     assert next(item for item in summary.days if item.date == date(2026, 8, 5)).status == STATUS_MISSING
+
+
+def test_justified_absence_removes_missing_and_expected_hours() -> None:
+    target = date(2026, 8, 20)
+    absences = {target: AbsenceInput(type="medical_certificate", note="Atestado")}
+    without = analyze_collaborator(person(), [], set(), 2026, 8, TODAY)
+    summary = analyze_collaborator(person(), [], set(), 2026, 8, TODAY, absences)
+    day = next(item for item in summary.days if item.date == target)
+    assert day.status == STATUS_JUSTIFIED_ABSENCE
+    assert day.expected == q(0)
+    assert day.executed == q(0)
+    assert day.absence_type == "medical_certificate"
+    assert summary.missing == without.missing - 1
+    assert summary.justified_absence == 1
+    assert summary.expected == without.expected - q(8)

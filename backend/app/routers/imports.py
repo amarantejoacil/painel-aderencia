@@ -21,6 +21,15 @@ def get_latest_import(db: Session = Depends(get_db)) -> ImportBatch | None:
     return _latest_import(db)
 
 
+@router.delete("/{import_id}", status_code=204)
+def delete_import(import_id: int, db: Session = Depends(get_db)) -> None:
+    batch = db.get(ImportBatch, import_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Importação não encontrada.")
+    db.delete(batch)
+    db.commit()
+
+
 @router.post("", response_model=ImportOut)
 async def upload_import(file: UploadFile = File(...), db: Session = Depends(get_db)) -> ImportBatch:
     filename = file.filename or "arquivo.csv"
