@@ -109,7 +109,7 @@ def expected_hours(
         return q(0)
     if day < collaborator.start_date:
         return q(0)
-    if collaborator.end_date and day > collaborator.end_date:
+    if collaborator.end_date and day >= collaborator.end_date:
         return q(0)
     return q(collaborator.daily_hours)
 
@@ -180,7 +180,9 @@ def analyze_collaborator(
 
     for day in month_days(year, month):
         absence = absences.get(day)
-        if absence is not None:
+        expected = expected_hours(collaborator, day, exception_dates, today)
+
+        if absence is not None and expected > 0:
             day_tasks = by_date.get(day, [])
             result = DayResult(
                 date=day,
@@ -208,7 +210,6 @@ def analyze_collaborator(
             counts[STATUS_JUSTIFIED_ABSENCE] += 1
             continue
 
-        expected = expected_hours(collaborator, day, exception_dates, today)
         day_tasks = by_date.get(day, [])
         executed, source = executed_for_day(day_tasks, collaborator.daily_hours)
         status = classify_status(expected, executed)
@@ -273,11 +274,9 @@ def analyze_team(
     absences = all_absences or {}
     eligible: list[CollaboratorSummary] = []
     for collaborator in collaborators:
-        if not collaborator.active:
-            continue
         if collaborator.start_date > last:
             continue
-        if collaborator.end_date and collaborator.end_date < first:
+        if collaborator.end_date and collaborator.end_date <= first:
             continue
         eligible.append(
             analyze_collaborator(

@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class CollaboratorBase(BaseModel):
@@ -26,12 +26,16 @@ class CollaboratorUpdate(BaseModel):
     active: bool | None = None
 
 
+class CollaboratorDismissal(BaseModel):
+    end_date: date
+
+
 class CollaboratorOut(CollaboratorBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
 
 
-ABSENCE_TYPES = "medical_certificate|vacation|day_off|leave|other"
+ABSENCE_TYPES = "medical_certificate|vacation|day_off|leave|work_release|other"
 
 
 class CollaboratorAbsenceCreate(BaseModel):
@@ -47,10 +51,38 @@ class CollaboratorAbsenceOut(CollaboratorAbsenceCreate):
     collaborator_id: int
 
 
+CALENDAR_EXCEPTION_TYPES = "holiday|optional_day|work_release"
+
+
 class CalendarExceptionCreate(BaseModel):
     date: date
-    type: str = Field(pattern="^(holiday|optional_day)$")
+    type: str = Field(pattern=f"^({CALENDAR_EXCEPTION_TYPES})$")
     description: str = Field(min_length=1, max_length=300)
+
+
+class WorkReleaseCreate(BaseModel):
+    scope: str = Field(pattern="^(team|collaborators)$")
+    collaborator_ids: list[int] = Field(default_factory=list)
+    start_date: date
+    end_date: date
+    description: str = Field(min_length=1, max_length=300)
+
+    @model_validator(mode="after")
+    def validate_release(self) -> "WorkReleaseCreate":
+        if self.end_date < self.start_date:
+            raise ValueError("A data final deve ser igual ou posterior à data inicial.")
+        if self.scope == "collaborators" and not self.collaborator_ids:
+            raise ValueError("Selecione ao menos um colaborador.")
+        return self
+
+
+class WorkReleaseOut(BaseModel):
+    scope: str
+    start_date: date
+    end_date: date
+    description: str
+    calendar_days: int = 0
+    collaborator_count: int = 0
 
 
 class CalendarExceptionOut(CalendarExceptionCreate):

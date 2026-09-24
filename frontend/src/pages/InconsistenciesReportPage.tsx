@@ -10,8 +10,8 @@ import {
   formatDate,
   formatDateWithWeekday,
   formatHours,
+  dayStatusLabel,
   monthLabel,
-  STATUS_LABEL,
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -25,7 +25,7 @@ function periodShort(year: number, month: number): string {
 }
 
 function issueLine(day: DayResult): string {
-  const label = STATUS_LABEL[day.status] ?? day.status
+  const label = dayStatusLabel(day.status, day.absence_type)
   const base = `${formatDate(day.date)} — ${label}`
   const hours = `Esperado: ${formatHours(day.expected)} | Executado: ${formatHours(day.executed)}`
   const gap = Math.abs(Number(day.difference))

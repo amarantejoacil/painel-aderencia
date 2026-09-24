@@ -59,7 +59,7 @@ As regras abaixo refletem o comportamento **implementado** no sistema.
 | Feriado cadastrado | Não | Não exigido |
 | Ponto facultativo cadastrado | Não | Não exigido |
 | Antes da data de entrada do colaborador | Não | Não exigido |
-| Depois da data de saída do colaborador | Não | Não exigido |
+| A partir da data de saída do colaborador (inclusive) | Não | Não exigido / Desligado |
 | Data futura (após hoje) | Não | Não exigido |
 
 ### Soma de Tasks no mesmo dia

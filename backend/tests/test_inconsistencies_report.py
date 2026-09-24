@@ -112,3 +112,41 @@ def test_report_situation_filter_ok_only() -> None:
     summaries = analyze_team([person(id=1), person(id=2, name="Maria")], [], set(), 2026, 8, TODAY)
     report = build_monthly_report(summaries, 2026, 8, situation=SITUATION_OK)
     assert all(row["situation"] == SITUATION_OK for row in report["rows"])
+
+
+def test_vacation_days_not_listed_as_pending() -> None:
+    from datetime import timedelta
+
+    from app.analysis.engine import AbsenceInput
+
+    vacation_start = date(2026, 9, 8)
+    vacation_end = date(2026, 9, 18)
+    absences: dict[date, AbsenceInput] = {}
+    current = vacation_start
+    while current <= vacation_end:
+        absences[current] = AbsenceInput(type="vacation", note="Férias programadas")
+        current += timedelta(days=1)
+
+    month_end = date(2026, 9, 30)
+    activities = []
+    for day in range(1, 31):
+        work_date = date(2026, 9, day)
+        if work_date > month_end:
+            continue
+        if work_date.weekday() >= 5:
+            continue
+        if vacation_start <= work_date <= vacation_end:
+            continue
+        activities.append(task(work_date, Decimal("8"), str(day)))
+
+    summary = analyze_collaborator(
+        person(name="João da Silva"),
+        activities,
+        set(),
+        2026,
+        9,
+        month_end,
+        absences,
+    )
+    assert is_collaborator_ok(summary)
+    assert len(pending_days(summary)) == 0

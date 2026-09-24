@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { CollaboratorSituationBadge } from '@/components/CollaboratorSituationBadge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -22,6 +23,9 @@ export function CollaboratorsPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [dismissTarget, setDismissTarget] = useState<Collaborator | null>(null)
+  const [dismissDate, setDismissDate] = useState('')
+  const [dismissError, setDismissError] = useState<string | null>(null)
 
   const load = () => {
     setLoading(true)
@@ -43,7 +47,7 @@ export function CollaboratorsPage() {
       start_date: form.start_date,
       end_date: form.end_date || null,
       daily_hours: Number(form.daily_hours),
-      active: form.active,
+      active: form.end_date ? false : form.active,
     }
     try {
       if (editingId) {
@@ -71,12 +75,37 @@ export function CollaboratorsPage() {
     })
   }
 
+  const openDismissal = (row: Collaborator) => {
+    setDismissTarget(row)
+    setDismissDate(row.end_date ?? '')
+    setDismissError(null)
+  }
+
+  const submitDismissal = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!dismissTarget || !dismissDate) return
+    setDismissError(null)
+    try {
+      await api.registerDismissal(dismissTarget.id, dismissDate)
+      setDismissTarget(null)
+      setDismissDate('')
+      if (editingId === dismissTarget.id) {
+        setEditingId(null)
+        setForm(EMPTY)
+      }
+      load()
+    } catch (err) {
+      setDismissError((err as Error).message)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-semibold">Colaboradores</h2>
         <p className="mt-1 text-sm text-muted">
-          O nome do Azure precisa ser igual ao texto que aparece em Assigned To, sem a matrícula.
+          O nome do Azure precisa ser igual ao texto que aparece em Assigned To, sem a matrícula. Use Registrar
+          desligamento para parar a cobrança de lançamentos a partir da data informada.
         </p>
       </div>
 
@@ -111,8 +140,17 @@ export function CollaboratorsPage() {
               id="end"
               type="date"
               value={form.end_date}
-              onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  end_date: e.target.value,
+                  active: e.target.value ? false : form.active,
+                })
+              }
             />
+            <p className="mt-1 text-xs text-muted">
+              A partir desta data (inclusive) o colaborador deixa de ter lançamentos exigidos no painel.
+            </p>
           </div>
           <div>
             <Label htmlFor="hours">Carga diária (horas)</Label>
@@ -130,6 +168,7 @@ export function CollaboratorsPage() {
             <input
               type="checkbox"
               checked={form.active}
+              disabled={Boolean(form.end_date)}
               onChange={(e) => setForm({ ...form, active: e.target.checked })}
             />
             Ativo
@@ -152,6 +191,34 @@ export function CollaboratorsPage() {
         </form>
         {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
       </Card>
+
+      {dismissTarget && (
+        <Card className="border-amber-200 bg-amber-50/80">
+          <h3 className="text-lg font-semibold">Registrar desligamento</h3>
+          <p className="mt-1 text-sm text-muted">
+            <span className="font-medium text-ink">{dismissTarget.name}</span> — informe a data a partir da qual não
+            haverá mais cobrança de Tasks do Azure (inclusive neste dia).
+          </p>
+          <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={submitDismissal}>
+            <div>
+              <Label htmlFor="dismiss-date">Data de desligamento</Label>
+              <Input
+                id="dismiss-date"
+                type="date"
+                value={dismissDate}
+                min={dismissTarget.start_date}
+                onChange={(e) => setDismissDate(e.target.value)}
+                required
+              />
+            </div>
+            <Button type="submit">Confirmar desligamento</Button>
+            <Button type="button" variant="secondary" onClick={() => setDismissTarget(null)}>
+              Cancelar
+            </Button>
+          </form>
+          {dismissError && <p className="mt-3 text-sm text-red-700">{dismissError}</p>}
+        </Card>
+      )}
 
       <Card className="p-0">
         {loading ? (
@@ -179,11 +246,20 @@ export function CollaboratorsPage() {
                   <Td>{formatDate(row.start_date)}</Td>
                   <Td>{row.end_date ? formatDate(row.end_date) : '—'}</Td>
                   <Td>{formatHours(row.daily_hours)}</Td>
-                  <Td>{row.active ? 'Ativo' : 'Inativo'}</Td>
+                  <Td>
+                    <CollaboratorSituationBadge collaborator={row} />
+                  </Td>
                   <Td className="text-right">
-                    <Button size="sm" variant="secondary" onClick={() => edit(row)}>
-                      Editar
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      {!row.end_date && row.active && (
+                        <Button size="sm" variant="secondary" onClick={() => openDismissal(row)}>
+                          Registrar desligamento
+                        </Button>
+                      )}
+                      <Button size="sm" variant="secondary" onClick={() => edit(row)}>
+                        Editar
+                      </Button>
+                    </div>
                   </Td>
                 </tr>
               ))}

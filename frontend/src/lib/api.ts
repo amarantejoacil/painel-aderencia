@@ -38,8 +38,25 @@ export type Collaborator = {
 export type CalendarException = {
   id: number
   date: string
-  type: 'holiday' | 'optional_day'
+  type: 'holiday' | 'optional_day' | 'work_release'
   description: string
+}
+
+export type WorkReleasePayload = {
+  scope: 'team' | 'collaborators'
+  collaborator_ids: number[]
+  start_date: string
+  end_date: string
+  description: string
+}
+
+export type WorkReleaseResult = {
+  scope: string
+  start_date: string
+  end_date: string
+  description: string
+  calendar_days: number
+  collaborator_count: number
 }
 
 export type ImportWarning = {
@@ -131,7 +148,7 @@ export type DayResult = {
 export type CollaboratorAbsence = {
   id: number
   collaborator_id: number
-  type: 'medical_certificate' | 'vacation' | 'day_off' | 'leave' | 'other'
+  type: 'medical_certificate' | 'vacation' | 'day_off' | 'leave' | 'work_release' | 'other'
   start_date: string
   end_date: string
   note: string | null
@@ -212,6 +229,11 @@ export const api = {
     request<Collaborator>('/collaborators', { method: 'POST', body: JSON.stringify(payload) }),
   updateCollaborator: (id: number, payload: Partial<Omit<Collaborator, 'id'>>) =>
     request<Collaborator>(`/collaborators/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  registerDismissal: (id: number, end_date: string) =>
+    request<Collaborator>(`/collaborators/${id}/dismissal`, {
+      method: 'POST',
+      body: JSON.stringify({ end_date }),
+    }),
   deleteCollaborator: (id: number) => request<void>(`/collaborators/${id}`, { method: 'DELETE' }),
   listExceptions: () => request<CalendarException[]>('/calendar-exceptions'),
   createException: (payload: Omit<CalendarException, 'id'>) =>
@@ -225,6 +247,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   deleteException: (id: number) => request<void>(`/calendar-exceptions/${id}`, { method: 'DELETE' }),
+  createWorkRelease: (payload: WorkReleasePayload) =>
+    request<WorkReleaseResult>('/work-releases', { method: 'POST', body: JSON.stringify(payload) }),
   deleteImport: (id: number) => request<void>(`/imports/${id}`, { method: 'DELETE' }),
   listImports: () => request<ImportResult[]>('/imports'),
   latestImport: () => request<ImportResult | null>('/imports/latest'),

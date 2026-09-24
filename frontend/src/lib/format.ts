@@ -7,11 +7,37 @@ export const STATUS_LABEL: Record<string, string> = {
   justified_absence: 'Ausência justificada',
 }
 
+export function dayStatusLabel(status: string, absenceType?: string | null): string {
+  if (status === 'justified_absence' && absenceType) {
+    return ABSENCE_TYPE_LABEL[absenceType] ?? STATUS_LABEL.justified_absence
+  }
+  return STATUS_LABEL[status] ?? status
+}
+
+/** Dia útil após a data de desligamento (inclusive): não exige lançamento do Azure. */
+export function collaboratorDaySituationLabel(
+  status: string,
+  dayDate: string,
+  endDate: string | null | undefined,
+  absenceType?: string | null,
+): string {
+  if (
+    endDate &&
+    dayDate >= endDate &&
+    status === 'not_required' &&
+    !isWeekendDate(dayDate)
+  ) {
+    return 'Desligado'
+  }
+  return dayStatusLabel(status, absenceType)
+}
+
 export const ABSENCE_TYPE_LABEL: Record<string, string> = {
   medical_certificate: 'Atestado médico',
   vacation: 'Férias',
   day_off: 'Folga',
   leave: 'Licença',
+  work_release: 'Liberação de expediente',
   other: 'Outro',
 }
 
@@ -36,6 +62,7 @@ export function formatAzureState(state: string | null | undefined): string {
 export const EXCEPTION_LABEL: Record<string, string> = {
   holiday: 'Feriado',
   optional_day: 'Ponto facultativo',
+  work_release: 'Liberação de expediente',
 }
 
 export function formatHours(value: number | string): string {

@@ -107,8 +107,22 @@ export function CollaboratorDetailPage() {
         </Link>
         <h2 className="mt-2 text-2xl font-semibold">{summary.collaborator.name}</h2>
         <p className="text-sm text-muted">
-          {monthLabel(year, month)} · Azure: {summary.collaborator.azure_name} · carga {formatHours(summary.collaborator.daily_hours)}
+          {monthLabel(year, month)} · Azure: {summary.collaborator.azure_name} · carga{' '}
+          {formatHours(summary.collaborator.daily_hours)}
+          {summary.collaborator.end_date && (
+            <>
+              {' '}
+              · Desligamento: {formatDate(summary.collaborator.end_date)}
+              {!summary.collaborator.active ? ' (inativo)' : ''}
+            </>
+          )}
         </p>
+        {summary.collaborator.end_date && (
+          <p className="mt-2 text-sm text-slate-700">
+            A partir de {formatDate(summary.collaborator.end_date)} não são exigidos lançamentos do Azure para este
+            colaborador.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -238,7 +252,7 @@ export function CollaboratorDetailPage() {
                 <Th className="text-right">Executado</Th>
                 <Th className="text-right">Diferença</Th>
                 <Th>Status da Task</Th>
-                <Th>Status</Th>
+                <Th>Situação</Th>
               </tr>
             </thead>
             <tbody>
@@ -273,7 +287,12 @@ export function CollaboratorDetailPage() {
                     </Td>
                     <Td className="text-sm">{formatDayTaskStatuses(day.tasks)}</Td>
                     <Td>
-                      <StatusBadge status={day.status} />
+                      <StatusBadge
+                        status={day.status}
+                        absenceType={day.absence_type}
+                        dayDate={day.date}
+                        endDate={summary.collaborator.end_date}
+                      />
                     </Td>
                   </tr>
                 )
@@ -301,6 +320,15 @@ export function CollaboratorDetailPage() {
                 {isWeekendDate(selected.date) && selected.status !== 'justified_absence' && (
                   <p className="text-sm text-red-700">Fim de semana — não exige lançamento de Tasks.</p>
                 )}
+                {summary.collaborator.end_date &&
+                  selected.date >= summary.collaborator.end_date &&
+                  selected.status === 'not_required' &&
+                  !isWeekendDate(selected.date) && (
+                    <p className="text-sm text-slate-700">
+                      Colaborador desligado — lançamentos do Azure não são exigidos a partir de{' '}
+                      {formatDate(summary.collaborator.end_date)}.
+                    </p>
+                  )}
                 {selected.status === 'justified_absence' ? (
                   <p className="text-sm text-muted">Ausência justificada — não exige lançamento de Tasks.</p>
                 ) : selected.status === 'missing' && selected.task_count === 0 ? (
