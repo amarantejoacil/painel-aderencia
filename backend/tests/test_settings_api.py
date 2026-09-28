@@ -10,7 +10,7 @@ def test_save_settings_encrypts_pat_and_never_returns_it(client) -> None:
             db,
             base_url="https://azure-devops.example.test",
             organization="NucleoIA",
-            project="Inteligência Artificial",
+            projects=["Inteligência Artificial"],
             pat="secret-pat-value",
             pat_expires_at=None,
         )
@@ -36,7 +36,7 @@ def test_update_settings_keeps_pat_when_not_provided(client) -> None:
             db,
             base_url="https://azure-devops.example.test",
             organization="NucleoIA",
-            project="Projeto A",
+            projects=["Projeto A"],
             pat="first-pat",
             pat_expires_at=None,
         )
@@ -48,7 +48,7 @@ def test_update_settings_keeps_pat_when_not_provided(client) -> None:
             db,
             base_url="https://azure-devops.example.test",
             organization="NucleoIA",
-            project="Projeto B",
+            projects=["Projeto B"],
             pat=None,
             pat_expires_at=None,
         )
@@ -56,6 +56,7 @@ def test_update_settings_keeps_pat_when_not_provided(client) -> None:
         assert after is not None
         assert after.encrypted_pat == encrypted_before
         assert after.project == "Projeto B"
+        assert after.projects == ["Projeto B"]
     finally:
         db.close()
 
@@ -67,7 +68,7 @@ def test_get_settings_endpoint_masks_pat(client) -> None:
             db,
             base_url="https://azure-devops.example.test",
             organization="NucleoIA",
-            project="Projeto",
+            projects=["Projeto"],
             pat="hidden-pat",
             pat_expires_at=None,
         )

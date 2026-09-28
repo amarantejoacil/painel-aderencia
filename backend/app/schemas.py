@@ -165,6 +165,7 @@ class AzureDevOpsSettingsOut(BaseModel):
     base_url: str | None = None
     organization: str | None = None
     project: str | None = None
+    projects: list[str] = Field(default_factory=list)
     pat_configured: bool = False
     pat_expires_at: date | None = None
     last_test_at: datetime | None = None
@@ -174,7 +175,7 @@ class AzureDevOpsSettingsOut(BaseModel):
 class AzureDevOpsSettingsUpdate(BaseModel):
     base_url: str = Field(min_length=1, max_length=500)
     organization: str = Field(min_length=1, max_length=200)
-    project: str = Field(min_length=1, max_length=200)
+    projects: list[str] = Field(min_length=1, max_length=50)
     pat: str | None = Field(default=None, max_length=500)
     pat_expires_at: date | None = None
 

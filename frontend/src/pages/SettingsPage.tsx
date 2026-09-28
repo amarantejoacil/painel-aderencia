@@ -11,7 +11,7 @@ import { formatDate, formatDateTime } from '@/lib/format'
 type FormState = {
   base_url: string
   organization: string
-  project: string
+  projects: string[]
   pat: string
   pat_expires_at: string
 }
@@ -19,7 +19,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   base_url: '',
   organization: '',
-  project: '',
+  projects: [],
   pat: '',
   pat_expires_at: '',
 }
@@ -27,10 +27,13 @@ const EMPTY_FORM: FormState = {
 export function SettingsPage() {
   const [settings, setSettings] = useState<AzureDevOpsSettings | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
+  const [remoteProjects, setRemoteProjects] = useState<string[]>([])
+  const [manualProject, setManualProject] = useState('')
   const [editingPat, setEditingPat] = useState(false)
   const [showPat, setShowPat] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [projectsError, setProjectsError] = useState<string | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [testMessage, setTestMessage] = useState<string | null>(null)
   const [testOk, setTestOk] = useState<boolean | null>(null)
@@ -40,10 +43,12 @@ export function SettingsPage() {
     try {
       const data = await api.getAzureDevOpsSettings()
       setSettings(data)
+      const projects =
+        data.projects?.length > 0 ? data.projects : data.project ? [data.project] : []
       setForm({
         base_url: data.base_url ?? '',
         organization: data.organization ?? '',
-        project: data.project ?? '',
+        projects,
         pat: '',
         pat_expires_at: data.pat_expires_at ?? '',
       })
@@ -57,8 +62,49 @@ export function SettingsPage() {
     void load()
   }, [])
 
+  const toggleProject = (name: string) => {
+    setForm((current) => {
+      const selected = new Set(current.projects)
+      if (selected.has(name)) selected.delete(name)
+      else selected.add(name)
+      return { ...current, projects: [...selected] }
+    })
+  }
+
+  const addManualProject = () => {
+    const label = manualProject.trim()
+    if (!label) return
+    setForm((current) => {
+      if (current.projects.some((item) => item.toLowerCase() === label.toLowerCase())) {
+        return current
+      }
+      return { ...current, projects: [...current.projects, label] }
+    })
+    setManualProject('')
+  }
+
+  const loadRemoteProjects = async () => {
+    setProjectsError(null)
+    setBusy(true)
+    try {
+      const names = await api.listAzureDevOpsProjects()
+      setRemoteProjects(names)
+      if (names.length === 0) {
+        setProjectsError('Nenhum projeto retornado pelo Azure DevOps.')
+      }
+    } catch (err) {
+      setProjectsError((err as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const submit = async (event: FormEvent) => {
     event.preventDefault()
+    if (form.projects.length === 0) {
+      setError('Selecione ao menos um projeto para sincronizar.')
+      return
+    }
     setBusy(true)
     setError(null)
     setSaveMessage(null)
@@ -66,13 +112,17 @@ export function SettingsPage() {
       const payload = {
         base_url: form.base_url.trim(),
         organization: form.organization.trim(),
-        project: form.project.trim(),
+        projects: form.projects,
         pat: form.pat.trim() ? form.pat.trim() : null,
         pat_expires_at: form.pat_expires_at || null,
       }
       const updated = await api.updateAzureDevOpsSettings(payload)
       setSettings(updated)
-      setForm((current) => ({ ...current, pat: '' }))
+      setForm((current) => ({
+        ...current,
+        projects: updated.projects?.length ? updated.projects : current.projects,
+        pat: '',
+      }))
       setEditingPat(false)
       setShowPat(false)
       setSaveMessage('Configurações salvas com sucesso.')
@@ -90,7 +140,10 @@ export function SettingsPage() {
     try {
       const result = await api.testAzureDevOpsSettings()
       setTestOk(result.ok)
-      setTestMessage(result.message ?? (result.ok ? 'Conexão realizada com sucesso' : 'Não foi possível conectar ao Azure DevOps'))
+      setTestMessage(
+        result.message ??
+          (result.ok ? 'Conexão realizada com sucesso' : 'Não foi possível conectar ao Azure DevOps'),
+      )
       await load()
     } catch (err) {
       setTestOk(false)
@@ -102,6 +155,8 @@ export function SettingsPage() {
 
   const configured = settings?.configured ?? false
   const patConfigured = settings?.pat_configured ?? false
+  const displayProjects =
+    settings?.projects?.length ? settings.projects : settings?.project ? [settings.project] : []
 
   return (
     <div className="space-y-6">
@@ -134,10 +189,10 @@ export function SettingsPage() {
                 </span>
               </p>
             )}
-            {settings?.project && (
-              <p className="mt-1">
-                <span className="text-muted">Projeto: </span>
-                <span className="font-medium">{settings.project}</span>
+            {displayProjects.length > 0 && (
+              <p className="mt-1 max-w-md">
+                <span className="text-muted">Projetos sincronizados: </span>
+                <span className="font-medium">{displayProjects.join(', ')}</span>
               </p>
             )}
           </div>
@@ -155,7 +210,7 @@ export function SettingsPage() {
                 required
               />
             </div>
-            <div>
+            <div className="md:col-span-2">
               <Label htmlFor="organization">Organização / Collection</Label>
               <Input
                 id="organization"
@@ -165,16 +220,65 @@ export function SettingsPage() {
                 required
               />
             </div>
-            <div>
-              <Label htmlFor="project">Projeto</Label>
-              <Input
-                id="project"
-                value={form.project}
-                placeholder="Inteligência Artificial"
-                onChange={(event) => setForm({ ...form, project: event.target.value })}
-                required
-              />
+          </div>
+
+          <div className="rounded-md border border-line bg-paper/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <Label>Projetos para sincronizar</Label>
+                <p className="mt-1 text-xs text-muted">
+                  Marque todos os projetos em que a equipe lança Tasks (ex.: Inteligência Artificial e Hannah).
+                </p>
+              </div>
+              <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void loadRemoteProjects()}>
+                Carregar projetos do Azure
+              </Button>
             </div>
+
+            {projectsError && <p className="mt-2 text-sm text-red-700">{projectsError}</p>}
+
+            {remoteProjects.length > 0 && (
+              <div className="mt-3 grid max-h-52 gap-2 overflow-y-auto sm:grid-cols-2">
+                {remoteProjects.map((name) => (
+                  <label key={name} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={form.projects.includes(name)}
+                      onChange={() => toggleProject(name)}
+                    />
+                    {name}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Input
+                value={manualProject}
+                placeholder="Adicionar projeto manualmente (ex.: Hannah)"
+                onChange={(event) => setManualProject(event.target.value)}
+                className="max-w-sm"
+              />
+              <Button type="button" variant="secondary" onClick={addManualProject}>
+                Adicionar
+              </Button>
+            </div>
+
+            {form.projects.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {form.projects.map((name) => (
+                  <button
+                    key={name}
+                    type="button"
+                    className="rounded-full bg-accent-soft px-3 py-1 text-xs font-medium text-accent"
+                    onClick={() => toggleProject(name)}
+                    title="Remover"
+                  >
+                    {name} ×
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div>
@@ -217,9 +321,7 @@ export function SettingsPage() {
                 </button>
               </div>
             )}
-            {patConfigured && (
-              <p className="mt-1 text-xs text-muted">PAT configurado: Sim</p>
-            )}
+            {patConfigured && <p className="mt-1 text-xs text-muted">PAT configurado: Sim</p>}
           </div>
 
           <div className="md:w-1/2">
@@ -231,9 +333,7 @@ export function SettingsPage() {
               onChange={(event) => setForm({ ...form, pat_expires_at: event.target.value })}
             />
             {settings?.pat_expires_at && patConfigured && (
-              <p className="mt-1 text-xs text-muted">
-                Expira em: {formatDate(settings.pat_expires_at)}
-              </p>
+              <p className="mt-1 text-xs text-muted">Expira em: {formatDate(settings.pat_expires_at)}</p>
             )}
           </div>
 
@@ -267,7 +367,7 @@ export function SettingsPage() {
         <Link to="/importacao" className="font-medium text-accent hover:underline">
           Importação
         </Link>{' '}
-        utiliza automaticamente estas configurações. A importação CSV permanece independente.
+        busca Tasks em todos os projetos selecionados. A importação CSV permanece independente.
       </p>
     </div>
   )

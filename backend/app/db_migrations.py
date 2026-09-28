@@ -18,6 +18,11 @@ def ensure_schema(engine: Engine) -> None:
             _add_column_if_missing(connection, "imports", "reference_month", "INTEGER", columns)
             _add_column_if_missing(connection, "imports", "source", "VARCHAR(20) DEFAULT 'csv'", columns)
 
+    if "azure_devops_settings" in tables:
+        columns = {column["name"] for column in inspector.get_columns("azure_devops_settings")}
+        with engine.begin() as connection:
+            _add_column_if_missing(connection, "azure_devops_settings", "projects", "JSONB", columns)
+
     if "activities" in tables:
         columns = {column["name"] for column in inspector.get_columns("activities")}
         with engine.begin() as connection:

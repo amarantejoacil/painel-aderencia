@@ -45,23 +45,47 @@ ACTIVITY_NAME_PATTERNS = (
 )
 
 
+def normalize_project_names(
+    projects: list[str] | None = None,
+    project: str | None = None,
+) -> list[str]:
+    names: list[str] = []
+    seen: set[str] = set()
+    for source in projects or []:
+        label = source.strip()
+        if not label:
+            continue
+        key = label.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        names.append(label)
+    if not names and project and project.strip():
+        names.append(project.strip())
+    return names
+
+
 class AzureDevOpsService:
     def __init__(
         self,
         *,
         base_url: str,
         organization: str,
-        project: str,
         pat: str,
         work_date_field: str = "",
         activity_field: str = "",
+        project: str | None = None,
+        projects: list[str] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.organization = organization.strip()
-        self.project = project.strip()
         self.pat = pat
         self.work_date_field = work_date_field.strip()
         self.activity_field = activity_field.strip()
+        self.projects = normalize_project_names(projects, project)
+        if not self.projects:
+            raise AzureDevOpsConfigError("Informe ao menos um projeto do Azure DevOps.")
+        self.project = self.projects[0]
         self._resolved_work_date_field: str | None = None
         self._resolved_activity_field: str | None = None
         self._field_catalog: list[dict[str, Any]] | None = None
@@ -76,11 +100,16 @@ class AzureDevOpsService:
             raise AzureDevOpsConfigError("Azure DevOps não configurado.")
         if not settings.azure_devops_pat.strip():
             raise AzureDevOpsConfigError("Azure DevOps não configurado.")
+        env_projects = [
+            item.strip()
+            for item in settings.azure_devops_project.split(",")
+            if item.strip()
+        ]
         return cls(
             base_url=settings.azure_devops_url,
             organization=settings.azure_devops_organization,
-            project=settings.azure_devops_project,
             pat=settings.azure_devops_pat,
+            projects=env_projects,
             work_date_field=settings.azure_devops_field_work_date,
             activity_field=settings.azure_devops_field_activity,
         )
@@ -89,9 +118,9 @@ class AzureDevOpsService:
     def org_base(self) -> str:
         return f"{self.base_url}/{quote(self.organization)}"
 
-    @property
-    def project_base(self) -> str:
-        return f"{self.org_base}/{quote(self.project)}"
+    def project_base(self, project: str | None = None) -> str:
+        label = (project or self.project).strip()
+        return f"{self.org_base}/{quote(label)}"
 
     def _headers(self) -> dict[str, str]:
         return {"Accept": "application/json"}
@@ -127,9 +156,20 @@ class AzureDevOpsService:
         except ValueError as exc:
             raise AzureDevOpsConnectionError("Resposta inválida do Azure DevOps.") from exc
 
+    def list_team_projects(self) -> list[str]:
+        url = f"{self.org_base}/_apis/projects?api-version={API_VERSION}&$top=200&stateFilter=WellFormed"
+        payload = self._request("GET", url)
+        names: list[str] = []
+        for item in payload.get("value") or []:
+            name = str(item.get("name") or "").strip()
+            if name:
+                names.append(name)
+        return sorted(names, key=str.casefold)
+
     def test_connection(self) -> None:
-        project_url = f"{self.org_base}/_apis/projects/{quote(self.project)}?api-version={API_VERSION}"
-        self._request("GET", project_url)
+        for project in self.projects:
+            project_url = f"{self.org_base}/_apis/projects/{quote(project)}?api-version={API_VERSION}"
+            self._request("GET", project_url)
         wiql = {
             "query": (
                 f"SELECT [System.Id] FROM WorkItems "
@@ -137,7 +177,7 @@ class AzureDevOpsService:
                 f"AND [System.WorkItemType] = 'Task'"
             )
         }
-        wiql_url = f"{self.project_base}/_apis/wit/wiql?api-version={API_VERSION}"
+        wiql_url = f"{self.project_base(self.project)}/_apis/wit/wiql?api-version={API_VERSION}"
         self._request("POST", wiql_url, json=wiql)
         self._load_field_catalog()
 
@@ -212,20 +252,20 @@ class AzureDevOpsService:
             "selected_mapping": selected,
         }
 
-    def query_task_ids(self, year: int, month: int) -> list[int]:
+    def _query_task_ids_for_project(self, project: str, year: int, month: int) -> list[int]:
         start = date(year, month, 1)
         end = date(year, month, monthrange(year, month)[1])
         work_date_field = self.resolve_work_date_field()
         wiql = {
             "query": (
                 f"SELECT [System.Id] FROM WorkItems "
-                f"WHERE [System.TeamProject] = '{self._escape_wiql(self.project)}' "
+                f"WHERE [System.TeamProject] = '{self._escape_wiql(project)}' "
                 f"AND [System.WorkItemType] = 'Task' "
                 f"AND [{work_date_field}] >= '{start.isoformat()}' "
                 f"AND [{work_date_field}] <= '{end.isoformat()}'"
             )
         }
-        wiql_url = f"{self.project_base}/_apis/wit/wiql?api-version={API_VERSION}"
+        wiql_url = f"{self.project_base(project)}/_apis/wit/wiql?api-version={API_VERSION}"
         payload = self._request("POST", wiql_url, json=wiql)
         ids: list[int] = []
         for item in payload.get("workItems") or []:
@@ -234,6 +274,17 @@ class AzureDevOpsService:
             except (KeyError, TypeError, ValueError):
                 continue
         return ids
+
+    def query_task_ids(self, year: int, month: int) -> list[int]:
+        seen: set[int] = set()
+        ordered: list[int] = []
+        for project in self.projects:
+            for task_id in self._query_task_ids_for_project(project, year, month):
+                if task_id in seen:
+                    continue
+                seen.add(task_id)
+                ordered.append(task_id)
+        return ordered
 
     def fetch_work_items(self, ids: list[int]) -> list[dict[str, Any]]:
         if not ids:

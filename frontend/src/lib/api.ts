@@ -105,6 +105,7 @@ export type AzureDevOpsSettings = {
   base_url: string | null
   organization: string | null
   project: string | null
+  projects: string[]
   pat_configured: boolean
   pat_expires_at: string | null
   last_test_at: string | null
@@ -273,10 +274,11 @@ export const api = {
       body: JSON.stringify({ year, month }),
     }),
   getAzureDevOpsSettings: () => request<AzureDevOpsSettings>('/settings/azure-devops'),
+  listAzureDevOpsProjects: () => request<string[]>('/azure-devops/projects'),
   updateAzureDevOpsSettings: (payload: {
     base_url: string
     organization: string
-    project: string
+    projects: string[]
     pat: string | null
     pat_expires_at: string | null
   }) =>

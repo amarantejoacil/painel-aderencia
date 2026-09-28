@@ -56,6 +56,17 @@ def _service_or_error(db: Session):
 
 
 
+@router.get("/projects", response_model=list[str])
+def list_projects(db: Session = Depends(get_db)) -> list[str]:
+    if not is_configured(db):
+        raise HTTPException(status_code=503, detail="Integração Azure DevOps não configurada.")
+    try:
+        service = _service_or_error(db)
+        return service.list_team_projects()
+    except AzureDevOpsError as exc:
+        raise HTTPException(status_code=502, detail=GENERIC_CONNECTION_MESSAGE) from exc
+
+
 @router.get("/status", response_model=AzureDevOpsStatusOut)
 
 def get_status(db: Session = Depends(get_db)) -> AzureDevOpsStatusOut:

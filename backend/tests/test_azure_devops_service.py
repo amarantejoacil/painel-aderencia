@@ -19,6 +19,31 @@ def service() -> AzureDevOpsService:
     )
 
 
+def test_query_task_ids_merges_multiple_projects() -> None:
+    service = AzureDevOpsService(
+        base_url="https://dev.azure.com",
+        organization="NucleoIA",
+        projects=["Inteligência Artificial", "Hannah"],
+        pat="secret-pat",
+        work_date_field="Custom.DataReferencia",
+        activity_field="Custom.Atividade",
+    )
+    response_a = MagicMock()
+    response_a.status_code = 200
+    response_a.json.return_value = {"workItems": [{"id": 10}]}
+    response_b = MagicMock()
+    response_b.status_code = 200
+    response_b.json.return_value = {"workItems": [{"id": 10}, {"id": 11}]}
+
+    with patch("app.services.azure_devops.httpx.Client") as client_cls:
+        client = client_cls.return_value.__enter__.return_value
+        client.request.side_effect = [response_a, response_b]
+        ids = service.query_task_ids(2026, 9)
+
+    assert ids == [10, 11]
+    assert client.request.call_count == 2
+
+
 def test_query_task_ids_uses_wiql(service: AzureDevOpsService) -> None:
     response = MagicMock()
     response.status_code = 200

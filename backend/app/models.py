@@ -102,6 +102,7 @@ class AzureDevOpsSettings(Base):
     base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     organization: Mapped[str | None] = mapped_column(String(200), nullable=True)
     project: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    projects: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     encrypted_pat: Mapped[str | None] = mapped_column(Text, nullable=True)
     pat_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     work_date_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
