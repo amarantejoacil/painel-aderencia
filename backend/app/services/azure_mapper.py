@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -8,6 +9,13 @@ from app.analysis.engine import q
 from app.services.activity_normalization import NormalizedActivity
 from app.services.azure_devops_errors import AzureDevOpsError
 from app.services.csv_parser import extract_assignee_name
+
+
+@dataclass
+class SyncIgnoredItem:
+    task_id: str | None
+    title: str | None
+    reason: str
 
 
 def _parse_azure_date(raw: Any) -> date | None:
@@ -61,25 +69,44 @@ def _field_value(fields: dict[str, Any], name: str) -> Any:
     return fields.get(name)
 
 
+def _task_preview(fields: dict[str, Any]) -> tuple[str | None, str | None]:
+    task_id_raw = _field_value(fields, "System.Id")
+    title_raw = _field_value(fields, "System.Title")
+    task_id = str(task_id_raw) if task_id_raw is not None else None
+    title = str(title_raw).strip() if title_raw is not None else None
+    return task_id, title
+
+
+def _resolve_completed_hours(
+    fields: dict[str, Any],
+    completed_hours_field: str,
+) -> Decimal | None:
+    primary = _parse_azure_hours(_field_value(fields, completed_hours_field))
+    if primary is not None:
+        return primary
+    return _parse_azure_hours(_field_value(fields, "Microsoft.VSTS.Scheduling.CompletedWork"))
+
+
 def map_work_item(
     item: dict[str, Any],
     *,
     work_date_field: str,
     activity_field: str | None,
-) -> NormalizedActivity | None:
+    completed_hours_field: str = "Microsoft.VSTS.Scheduling.CompletedWork",
+) -> tuple[NormalizedActivity | None, str | None]:
     fields = item.get("fields") or {}
     task_id_raw = _field_value(fields, "System.Id")
     title_raw = _field_value(fields, "System.Title")
     if task_id_raw is None or title_raw is None:
-        return None
+        return None, "Task sem ID ou título no Azure."
 
     work_date = _parse_azure_date(_field_value(fields, work_date_field))
     if work_date is None:
-        return None
+        return None, "Data de referência ausente ou inválida."
 
     azure_assignee, assignee_name = _format_assignee(_field_value(fields, "System.AssignedTo"))
     if not assignee_name:
-        return None
+        return None, "Responsável (Assigned To) ausente ou inválido."
 
     activity_category = None
     if activity_field:
@@ -87,14 +114,14 @@ def map_work_item(
         if raw_category is not None and str(raw_category).strip():
             activity_category = str(raw_category).strip()
 
-    return NormalizedActivity(
+    activity = NormalizedActivity(
         task_id=str(task_id_raw),
         title=str(title_raw).strip(),
         azure_assignee=azure_assignee,
         assignee_name=assignee_name,
         work_date=work_date,
         work_item_type=str(_field_value(fields, "System.WorkItemType") or "").strip() or None,
-        completed_hours=_parse_azure_hours(_field_value(fields, "Microsoft.VSTS.Scheduling.CompletedWork")),
+        completed_hours=_resolve_completed_hours(fields, completed_hours_field),
         estimated_hours=_parse_azure_hours(_field_value(fields, "Microsoft.VSTS.Scheduling.OriginalEstimate")),
         state=str(_field_value(fields, "System.State") or "").strip() or None,
         project=str(_field_value(fields, "System.AreaPath") or _field_value(fields, "System.TeamProject") or "").strip()
@@ -102,6 +129,7 @@ def map_work_item(
         activity_category=activity_category,
         source="azure_api",
     )
+    return activity, None
 
 
 def map_work_items(
@@ -109,21 +137,31 @@ def map_work_items(
     *,
     work_date_field: str,
     activity_field: str | None,
-) -> tuple[list[NormalizedActivity], int]:
+    completed_hours_field: str = "Microsoft.VSTS.Scheduling.CompletedWork",
+) -> tuple[list[NormalizedActivity], list[SyncIgnoredItem]]:
     mapped: list[NormalizedActivity] = []
-    skipped = 0
+    ignored: list[SyncIgnoredItem] = []
     for item in items:
+        fields = item.get("fields") or {}
+        task_id, title = _task_preview(fields)
         try:
-            normalized = map_work_item(
+            normalized, reason = map_work_item(
                 item,
                 work_date_field=work_date_field,
                 activity_field=activity_field,
+                completed_hours_field=completed_hours_field,
             )
-        except AzureDevOpsError:
-            skipped += 1
+        except AzureDevOpsError as exc:
+            ignored.append(SyncIgnoredItem(task_id=task_id, title=title, reason=str(exc)))
             continue
         if normalized is None:
-            skipped += 1
+            ignored.append(
+                SyncIgnoredItem(
+                    task_id=task_id,
+                    title=title,
+                    reason=reason or "Dados incompletos ou inválidos.",
+                )
+            )
             continue
         mapped.append(normalized)
-    return mapped, skipped
+    return mapped, ignored

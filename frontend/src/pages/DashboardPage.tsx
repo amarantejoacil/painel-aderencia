@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { DashboardCharts } from '@/components/DashboardCharts'
+import { PeriodObservationsModal } from '@/components/PeriodObservationsModal'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Table, Td, Th } from '@/components/ui/table'
@@ -57,6 +58,8 @@ export function DashboardPage() {
   const [data, setData] = useState<Dashboard | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [observationsText, setObservationsText] = useState<string | null>(null)
+  const [observationsLoading, setObservationsLoading] = useState(false)
 
   const months = useMemo(
     () =>
@@ -118,8 +121,36 @@ export function DashboardPage() {
           >
             Exportar Excel
           </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={observationsLoading}
+            onClick={() => {
+              setObservationsLoading(true)
+              api
+                .periodObservations({
+                  year,
+                  month,
+                  collaborator_id: collaboratorId ? Number(collaboratorId) : undefined,
+                })
+                .then((result) => setObservationsText(result.text))
+                .catch((err: Error) => setError(err.message))
+                .finally(() => setObservationsLoading(false))
+            }}
+          >
+            {observationsLoading ? 'Gerando…' : 'Texto para o relatório'}
+          </Button>
         </div>
       </div>
+
+      {observationsText !== null && (
+        <PeriodObservationsModal
+          year={year}
+          month={month}
+          text={observationsText}
+          onClose={() => setObservationsText(null)}
+        />
+      )}
 
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">

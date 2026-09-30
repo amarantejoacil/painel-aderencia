@@ -150,12 +150,19 @@ class AzureDevOpsSyncIn(BaseModel):
     month: int = Field(ge=1, le=12)
 
 
+class AzureDevOpsSyncIgnoredOut(BaseModel):
+    task_id: str | None = None
+    title: str | None = None
+    reason: str
+
+
 class AzureDevOpsSyncOut(BaseModel):
     period_label: str
     tasks_found: int
     created: int
     updated: int
     ignored: int
+    ignored_items: list[AzureDevOpsSyncIgnoredOut] = Field(default_factory=list)
     last_sync_at: datetime
     import_id: int
 
@@ -231,6 +238,13 @@ class DashboardOut(BaseModel):
     indicators: dict
     rows: list[DashboardRowOut]
     daily_adherence: list[DailyAdherenceOut] = []
+
+
+class PeriodObservationsOut(BaseModel):
+    year: int
+    month: int
+    period_label: str
+    text: str
 
 
 class CollaboratorAnalysisOut(BaseModel):

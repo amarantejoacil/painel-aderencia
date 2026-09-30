@@ -159,6 +159,24 @@ def build_service(db: Session) -> AzureDevOpsService:
     raise AzureDevOpsConfigError("Azure DevOps não configurado.")
 
 
+def persist_discovered_fields(db: Session, mapping: dict[str, str | None]) -> None:
+    row = get_settings_row(db)
+    if not row:
+        return
+    changed = False
+    work_date = (mapping.get("work_date_field") or "").strip()
+    activity = (mapping.get("activity_field") or "").strip()
+    if work_date and not (row.work_date_field or "").strip():
+        row.work_date_field = work_date
+        changed = True
+    if activity and not (row.activity_field or "").strip():
+        row.activity_field = activity
+        changed = True
+    if changed:
+        row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        db.commit()
+
+
 def record_test_result(db: Session, *, ok: bool) -> None:
     row = _ensure_row(db)
     row.last_test_at = datetime.now(timezone.utc).replace(tzinfo=None)

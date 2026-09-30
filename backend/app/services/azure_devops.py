@@ -43,6 +43,10 @@ ACTIVITY_NAME_PATTERNS = (
     re.compile(r"^activity$", re.IGNORECASE),
     re.compile(r"categoria\s*de\s*atividade", re.IGNORECASE),
 )
+COMPLETED_HOURS_PATTERNS = (
+    re.compile(r"horas\s*executadas", re.IGNORECASE),
+    re.compile(r"^completed\s*work$", re.IGNORECASE),
+)
 
 
 def normalize_project_names(
@@ -88,6 +92,7 @@ class AzureDevOpsService:
         self.project = self.projects[0]
         self._resolved_work_date_field: str | None = None
         self._resolved_activity_field: str | None = None
+        self._resolved_completed_hours_field: str | None = None
         self._field_catalog: list[dict[str, Any]] | None = None
 
     @classmethod
@@ -225,13 +230,26 @@ class AzureDevOpsService:
         self._resolved_activity_field = discovered or ""
         return discovered
 
+    def resolve_completed_hours_field(self) -> str:
+        if self._resolved_completed_hours_field:
+            return self._resolved_completed_hours_field
+        discovered: str | None = None
+        try:
+            discovered = self._match_field(COMPLETED_HOURS_PATTERNS)
+        except AzureDevOpsError:
+            pass
+        self._resolved_completed_hours_field = (
+            discovered or "Microsoft.VSTS.Scheduling.CompletedWork"
+        )
+        return self._resolved_completed_hours_field
+
     def discover_field_mapping(self) -> dict[str, str | None]:
         work_date = self.resolve_work_date_field()
         activity = self.resolve_activity_field()
         return {
             "work_date_field": work_date,
             "activity_field": activity,
-            "completed_hours_field": "Microsoft.VSTS.Scheduling.CompletedWork",
+            "completed_hours_field": self.resolve_completed_hours_field(),
             "task_id_field": "System.Id",
             "title_field": "System.Title",
             "assignee_field": "System.AssignedTo",
@@ -291,11 +309,14 @@ class AzureDevOpsService:
             return []
         work_date_field = self.resolve_work_date_field()
         activity_field = self.resolve_activity_field()
+        completed_hours_field = self.resolve_completed_hours_field()
         fields = list(SYSTEM_FIELDS)
         if work_date_field not in fields:
             fields.append(work_date_field)
         if activity_field and activity_field not in fields:
             fields.append(activity_field)
+        if completed_hours_field not in fields:
+            fields.append(completed_hours_field)
 
         items: list[dict[str, Any]] = []
         for start in range(0, len(ids), BATCH_SIZE):

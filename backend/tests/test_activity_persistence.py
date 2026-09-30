@@ -62,6 +62,35 @@ def test_persist_azure_merge_is_idempotent(client) -> None:
         db.close()
 
 
+def test_persist_azure_merge_reports_out_of_period_as_ignored(client) -> None:
+    db = TestingSession()
+    try:
+        incoming = [_item("3001", date(2026, 8, 31), title="Fora do mês")]
+        _, stats = persist_azure_merge(db, year=2026, month=9, incoming=incoming)
+        assert stats.ignored == 1
+        assert len(stats.ignored_items) == 1
+        assert stats.ignored_items[0].task_id == "3001"
+        assert "fora do período" in stats.ignored_items[0].reason.lower()
+    finally:
+        db.close()
+
+
+def test_persist_azure_merge_counts_new_tasks_on_resync(client) -> None:
+    db = TestingSession()
+    try:
+        incoming = [_item("2001", date(2026, 9, 2)), _item("2002", date(2026, 9, 3))]
+        _, stats_first = persist_azure_merge(db, year=2026, month=9, incoming=incoming)
+        assert stats_first.created == 2
+        assert stats_first.updated == 0
+
+        incoming_with_new = incoming + [_item("2003", date(2026, 9, 4))]
+        _, stats_second = persist_azure_merge(db, year=2026, month=9, incoming=incoming_with_new)
+        assert stats_second.created == 1
+        assert stats_second.updated == 2
+    finally:
+        db.close()
+
+
 def test_persist_azure_merge_updates_existing_task_from_csv(client) -> None:
     db = TestingSession()
     try:

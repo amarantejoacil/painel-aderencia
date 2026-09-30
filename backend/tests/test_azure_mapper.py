@@ -33,12 +33,13 @@ def _sample_item(
 
 def test_map_work_item_maps_core_fields() -> None:
     item = _sample_item()
-    mapped = map_work_item(
+    mapped, reason = map_work_item(
         item,
         work_date_field="Custom.DataReferencia",
         activity_field="Custom.Atividade",
     )
     assert mapped is not None
+    assert reason is None
     assert mapped.task_id == "3846"
     assert mapped.title == "Onboarding"
     assert mapped.work_date == date(2026, 8, 3)
@@ -51,16 +52,34 @@ def test_map_work_item_maps_core_fields() -> None:
 
 def test_map_work_item_skips_without_work_date() -> None:
     item = _sample_item(work_date="")
-    assert map_work_item(item, work_date_field="Custom.DataReferencia", activity_field=None) is None
+    mapped, reason = map_work_item(item, work_date_field="Custom.DataReferencia", activity_field=None)
+    assert mapped is None
+    assert reason == "Data de referência ausente ou inválida."
+
+
+def test_map_work_item_uses_custom_completed_hours_field() -> None:
+    item = _sample_item(completed=None)
+    item["fields"]["Custom.Horasexecutadas"] = 8.0
+    mapped, reason = map_work_item(
+        item,
+        work_date_field="Custom.DataReferencia",
+        activity_field="Custom.Atividade",
+        completed_hours_field="Custom.Horasexecutadas",
+    )
+    assert mapped is not None
+    assert reason is None
+    assert mapped.completed_hours == Decimal("8.00")
 
 
 def test_map_work_items_counts_skipped() -> None:
     valid = _sample_item(task_id=1)
     invalid = _sample_item(task_id=2, work_date="")
-    mapped, skipped = map_work_items(
+    mapped, ignored = map_work_items(
         [valid, invalid],
         work_date_field="Custom.DataReferencia",
         activity_field="Custom.Atividade",
     )
     assert len(mapped) == 1
-    assert skipped == 1
+    assert len(ignored) == 1
+    assert ignored[0].task_id == "2"
+    assert "Data de referência" in ignored[0].reason

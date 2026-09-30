@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.models import Activity, Collaborator, ImportBatch
 from app.services.activity_normalization import NormalizedActivity
+from app.services.azure_mapper import SyncIgnoredItem
 from app.services.csv_parser import normalize_name
 
 MONTH_NAMES = [
@@ -33,6 +34,22 @@ class SyncStats:
     created: int = 0
     updated: int = 0
     ignored: int = 0
+    ignored_items: list[SyncIgnoredItem] = field(default_factory=list)
+
+
+def _previous_period_task_ids(db: Session, year: int, month: int) -> set[str]:
+    batch = db.scalars(
+        select(ImportBatch)
+        .where(
+            ImportBatch.reference_year == year,
+            ImportBatch.reference_month == month,
+        )
+        .order_by(ImportBatch.imported_at.desc())
+        .limit(1)
+    ).first()
+    if batch is None:
+        return set()
+    return set(db.scalars(select(Activity.task_id).where(Activity.import_id == batch.id)).all())
 
 
 def latest_import_batch(db: Session) -> ImportBatch | None:
@@ -166,6 +183,7 @@ def persist_azure_merge(
     extra_warnings: list[dict] | None = None,
 ) -> tuple[ImportBatch, SyncStats]:
     stats = SyncStats(tasks_found=len(incoming))
+    previous_period_ids = _previous_period_task_ids(db, year, month)
 
     by_task_id: dict[str, NormalizedActivity] = {}
     latest = db.scalars(
@@ -180,9 +198,19 @@ def persist_azure_merge(
     for item in incoming:
         if item.work_date.year != year or item.work_date.month != month:
             stats.ignored += 1
+            stats.ignored_items.append(
+                SyncIgnoredItem(
+                    task_id=item.task_id,
+                    title=item.title,
+                    reason=(
+                        f"Data de referência ({item.work_date.strftime('%d/%m/%Y')}) "
+                        f"fora do período sincronizado ({month:02d}/{year})."
+                    ),
+                )
+            )
             continue
         item.source = "azure_api"
-        if item.task_id in by_task_id:
+        if item.task_id in previous_period_ids:
             stats.updated += 1
         else:
             stats.created += 1

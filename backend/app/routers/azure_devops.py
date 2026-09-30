@@ -14,15 +14,14 @@ from app.schemas import (
 
     AzureDevOpsSyncIn,
 
+    AzureDevOpsSyncIgnoredOut,
     AzureDevOpsSyncOut,
-
     AzureDevOpsTestOut,
-
 )
 
 from app.services.activity_persistence import azure_period_label, latest_azure_sync, persist_azure_merge
 
-from app.services.azure_devops_config import build_service, is_configured
+from app.services.azure_devops_config import build_service, is_configured, persist_discovered_fields
 
 from app.services.azure_devops_errors import AzureDevOpsConfigError, AzureDevOpsError
 
@@ -148,71 +147,53 @@ def sync_azure_devops(payload: AzureDevOpsSyncIn, db: Session = Depends(get_db))
         service = _service_or_error(db)
 
         mapping = service.discover_field_mapping()
+        persist_discovered_fields(db, mapping)
 
         task_ids = service.query_task_ids(payload.year, payload.month)
 
         raw_items = service.fetch_work_items(task_ids)
 
-        mapped, skipped = map_work_items(
-
+        mapped, mapper_ignored = map_work_items(
             raw_items,
-
             work_date_field=mapping["work_date_field"] or "",
-
             activity_field=mapping.get("activity_field"),
-
+            completed_hours_field=mapping.get("completed_hours_field")
+            or "Microsoft.VSTS.Scheduling.CompletedWork",
         )
 
         extra_warnings: list[dict] = []
-
-        if skipped:
-
+        if mapper_ignored:
             extra_warnings.append(
-
                 {
-
                     "kind": "skipped",
-
-                    "message": f"{skipped} Task(s) ignorada(s) por dados incompletos ou inválidos.",
-
+                    "message": f"{len(mapper_ignored)} Task(s) ignorada(s) por dados incompletos ou inválidos.",
                     "row": None,
-
                 }
-
             )
 
         batch, stats = persist_azure_merge(
-
             db,
-
             year=payload.year,
-
             month=payload.month,
-
             incoming=mapped,
-
             extra_warnings=extra_warnings,
-
         )
 
         stats.tasks_found = len(task_ids)
+        ignored_items = [
+            AzureDevOpsSyncIgnoredOut(task_id=item.task_id, title=item.title, reason=item.reason)
+            for item in [*mapper_ignored, *stats.ignored_items]
+        ]
 
         return AzureDevOpsSyncOut(
-
             period_label=azure_period_label(payload.year, payload.month),
-
             tasks_found=stats.tasks_found,
-
             created=stats.created,
-
             updated=stats.updated,
-
-            ignored=stats.ignored + skipped,
-
+            ignored=len(ignored_items),
+            ignored_items=ignored_items,
             last_sync_at=batch.imported_at,
-
             import_id=batch.id,
-
         )
 
     except AzureDevOpsError as exc:

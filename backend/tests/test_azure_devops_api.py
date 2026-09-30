@@ -60,7 +60,7 @@ def test_sync_creates_merged_batch(client) -> None:
             }):
                 with patch.object(AzureDevOpsService, "query_task_ids", return_value=[9001]):
                     with patch.object(AzureDevOpsService, "fetch_work_items", return_value=[{"id": 9001, "fields": {}}]):
-                        with patch("app.routers.azure_devops.map_work_items", return_value=(mapped, 0)):
+                        with patch("app.routers.azure_devops.map_work_items", return_value=(mapped, [])):
                             response = client.post("/api/azure-devops/sync", json={"year": 2026, "month": 8})
 
     assert response.status_code == 200

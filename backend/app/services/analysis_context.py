@@ -43,6 +43,11 @@ def load_exception_dates(db: Session) -> set[date]:
     return set(db.scalars(select(CalendarException.date)).all())
 
 
+def load_calendar_exceptions_by_date(db: Session) -> dict[date, CalendarException]:
+    rows = db.scalars(select(CalendarException)).all()
+    return {row.date: row for row in rows}
+
+
 def load_collaborator_inputs(db: Session) -> list[CollaboratorInput]:
     return [to_collaborator_input(item) for item in db.scalars(select(Collaborator)).all()]
 

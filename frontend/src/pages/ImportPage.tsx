@@ -415,20 +415,39 @@ export function ImportPage() {
       )}
 
       {syncResult && (
-        <Card>
+        <Card
+          className={
+            syncResult.created > 0 ? 'border-emerald-200 bg-emerald-50/40' : undefined
+          }
+        >
           <h3 className="font-semibold">Sincronização concluída</h3>
           <p className="mt-1 text-sm text-muted">Período: {syncResult.period_label}</p>
+          <p
+            className={`mt-3 text-base ${
+              syncResult.created > 0 ? 'font-semibold text-emerald-900' : 'text-muted'
+            }`}
+          >
+            {syncResult.created > 0
+              ? `${syncResult.created} novo(s) registro(s) importado(s) nesta sincronização.`
+              : 'Nenhum registro novo nesta sincronização (apenas atualizações ou Tasks já conhecidas).'}
+          </p>
           <dl className="mt-4 grid gap-3 sm:grid-cols-4">
             <div>
               <dt className="text-xs uppercase text-muted">Tasks encontradas</dt>
               <dd className="text-xl font-semibold">{syncResult.tasks_found}</dd>
             </div>
             <div>
-              <dt className="text-xs uppercase text-muted">Novas</dt>
-              <dd className="text-xl font-semibold">{syncResult.created}</dd>
+              <dt className="text-xs uppercase text-muted">Novos registros</dt>
+              <dd
+                className={`text-xl font-semibold ${
+                  syncResult.created > 0 ? 'text-emerald-800' : ''
+                }`}
+              >
+                {syncResult.created}
+              </dd>
             </div>
             <div>
-              <dt className="text-xs uppercase text-muted">Atualizadas</dt>
+              <dt className="text-xs uppercase text-muted">Atualizados</dt>
               <dd className="text-xl font-semibold">{syncResult.updated}</dd>
             </div>
             <div>
@@ -436,6 +455,22 @@ export function ImportPage() {
               <dd className="text-xl font-semibold">{syncResult.ignored}</dd>
             </div>
           </dl>
+          {syncResult.ignored > 0 && syncResult.ignored_items?.length > 0 && (
+            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50/80 p-3">
+              <p className="text-sm font-medium text-amber-950">Tasks ignoradas nesta sincronização</p>
+              <ul className="mt-2 space-y-2 text-sm text-amber-950">
+                {syncResult.ignored_items.map((item, index) => (
+                  <li key={`${item.task_id ?? 'na'}-${index}`} className="border-t border-amber-200/80 pt-2 first:border-0 first:pt-0">
+                    <span className="font-medium">
+                      {item.task_id ? `#${item.task_id}` : 'Task sem ID'}
+                      {item.title ? ` — ${item.title}` : ''}
+                    </span>
+                    <p className="mt-0.5 text-amber-900">{item.reason}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <p className="mt-3 text-sm text-muted">
             Última sincronização: {formatDateTime(syncResult.last_sync_at)}
           </p>

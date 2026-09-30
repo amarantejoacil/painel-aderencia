@@ -90,12 +90,19 @@ export type AzureDevOpsTestResult = {
   message?: string | null
 }
 
+export type AzureDevOpsSyncIgnored = {
+  task_id: string | null
+  title: string | null
+  reason: string
+}
+
 export type AzureDevOpsSyncResult = {
   period_label: string
   tasks_found: number
   created: number
   updated: number
   ignored: number
+  ignored_items: AzureDevOpsSyncIgnored[]
   last_sync_at: string
   import_id: number
 }
@@ -191,6 +198,13 @@ export type Dashboard = {
     adherence: number | string
     collaborators: number
   }>
+}
+
+export type PeriodObservations = {
+  year: number
+  month: number
+  period_label: string
+  text: string
 }
 
 export type CollaboratorAnalysis = {
@@ -293,6 +307,11 @@ export const api = {
     if (params.collaborator_id) query.set('collaborator_id', String(params.collaborator_id))
     if (params.status) query.set('status', params.status)
     return request<Dashboard>(`/dashboard?${query}`)
+  },
+  periodObservations: (params: { year: number; month: number; collaborator_id?: number }) => {
+    const query = new URLSearchParams({ year: String(params.year), month: String(params.month) })
+    if (params.collaborator_id) query.set('collaborator_id', String(params.collaborator_id))
+    return request<PeriodObservations>(`/dashboard/period-observations?${query}`)
   },
   analysis: (id: number, year: number, month: number) =>
     request<CollaboratorAnalysis>(`/collaborators/${id}/analysis?year=${year}&month=${month}`),

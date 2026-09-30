@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 import unicodedata
 from calendar import monthrange
 from datetime import date
@@ -13,7 +14,8 @@ from openpyxl.utils import get_column_letter
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Activity, Collaborator, ImportBatch
+from app.analysis.engine import AbsenceInput
+from app.models import Activity, CalendarException, Collaborator, ImportBatch
 from app.services.azure_state_labels import translate_azure_state
 
 HEADERS = [
@@ -24,7 +26,16 @@ HEADERS = [
     "Atribuído para",
     "Status da Atividade",
     "Horas Executadas",
+    "Liberação de expediente",
+    "Exceção de calendário",
+    "Férias",
 ]
+
+CALENDAR_EXCEPTION_LABELS = {
+    "holiday": "Feriado",
+    "optional_day": "Ponto facultativo",
+    "work_release": "Liberação de expediente",
+}
 
 HEADER_FILL = PatternFill("solid", fgColor="1F6B59")
 HEADER_FONT = Font(bold=True, color="FFFFFF")
@@ -36,7 +47,60 @@ COLUMN_WIDTHS = {
     "E": 28,
     "F": 22,
     "G": 16,
+    "H": 28,
+    "I": 28,
+    "J": 18,
 }
+
+
+@dataclass(frozen=True)
+class ExportContext:
+    calendar_by_date: dict[date, CalendarException]
+    absences_by_collaborator: dict[int, dict[date, AbsenceInput]]
+
+
+def format_work_release_cell(
+    work_date: date,
+    collaborator_id: int | None,
+    calendar_by_date: dict[date, CalendarException],
+    absences_by_collaborator: dict[int, dict[date, AbsenceInput]],
+) -> str:
+    parts: list[str] = []
+    calendar = calendar_by_date.get(work_date)
+    if calendar is not None and calendar.type == "work_release":
+        parts.append(calendar.description.strip() if calendar.description else "Equipe")
+    if collaborator_id is not None:
+        absence = absences_by_collaborator.get(collaborator_id, {}).get(work_date)
+        if absence is not None and absence.type == "work_release":
+            parts.append(absence.note.strip() if absence.note else "Individual")
+    return " — ".join(parts)
+
+
+def format_calendar_exception_cell(
+    work_date: date,
+    calendar_by_date: dict[date, CalendarException],
+) -> str:
+    calendar = calendar_by_date.get(work_date)
+    if calendar is None or calendar.type == "work_release":
+        return ""
+    label = CALENDAR_EXCEPTION_LABELS.get(calendar.type, calendar.type)
+    description = (calendar.description or "").strip()
+    if description:
+        return f"{label} — {description}"
+    return label
+
+
+def format_vacation_cell(
+    work_date: date,
+    collaborator_id: int | None,
+    absences_by_collaborator: dict[int, dict[date, AbsenceInput]],
+) -> str:
+    if collaborator_id is None:
+        return ""
+    absence = absences_by_collaborator.get(collaborator_id, {}).get(work_date)
+    if absence is None or absence.type != "vacation":
+        return ""
+    return absence.note.strip() if absence.note else "Férias"
 
 
 def _slug_name(name: str) -> str:
@@ -114,7 +178,12 @@ def _hours_value(value: Decimal | None) -> float | None:
     return float(value)
 
 
-def build_activities_workbook(activities: list[Activity]) -> BytesIO:
+def build_activities_workbook(
+    activities: list[Activity],
+    context: ExportContext | None = None,
+) -> BytesIO:
+    calendar_by_date = context.calendar_by_date if context else {}
+    absences_by_collaborator = context.absences_by_collaborator if context else {}
     workbook = Workbook()
     worksheet = workbook.active
     worksheet.title = "Atividades"
@@ -148,10 +217,41 @@ def build_activities_workbook(activities: list[Activity]) -> BytesIO:
         else:
             hours_cell.alignment = Alignment(horizontal="center")
 
+        release_cell = worksheet.cell(
+            row=row_index,
+            column=8,
+            value=format_work_release_cell(
+                activity.work_date,
+                activity.collaborator_id,
+                calendar_by_date,
+                absences_by_collaborator,
+            ),
+        )
+        release_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+        exception_cell = worksheet.cell(
+            row=row_index,
+            column=9,
+            value=format_calendar_exception_cell(activity.work_date, calendar_by_date),
+        )
+        exception_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
+        vacation_cell = worksheet.cell(
+            row=row_index,
+            column=10,
+            value=format_vacation_cell(
+                activity.work_date,
+                activity.collaborator_id,
+                absences_by_collaborator,
+            ),
+        )
+        vacation_cell.alignment = Alignment(wrap_text=True, vertical="top")
+
     for column, width in COLUMN_WIDTHS.items():
         worksheet.column_dimensions[column].width = width
 
-    worksheet.auto_filter.ref = f"A1:G{max(1, len(activities) + 1)}"
+    last_col = get_column_letter(len(HEADERS))
+    worksheet.auto_filter.ref = f"A1:{last_col}{max(1, len(activities) + 1)}"
     worksheet.freeze_panes = "A2"
 
     buffer = BytesIO()

@@ -5,10 +5,12 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Collaborator
 from app.services.activities_export import (
+    ExportContext,
     build_activities_workbook,
     build_export_filename,
     fetch_activities,
 )
+from app.services.analysis_context import load_calendar_exceptions_by_date, load_collaborator_absences
 
 router = APIRouter(prefix="/activities", tags=["activities"])
 
@@ -27,7 +29,11 @@ def export_activities_excel(
             raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
 
     activities = fetch_activities(db, year, month, collaborator_id)
-    workbook = build_activities_workbook(activities)
+    context = ExportContext(
+        calendar_by_date=load_calendar_exceptions_by_date(db),
+        absences_by_collaborator=load_collaborator_absences(db),
+    )
+    workbook = build_activities_workbook(activities, context)
     filename = build_export_filename(year, month, collaborator)
 
     return Response(

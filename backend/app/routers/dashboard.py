@@ -19,6 +19,7 @@ from app.schemas import (
     DailyAdherenceOut,
     DashboardOut,
     DashboardRowOut,
+    PeriodObservationsOut,
     DayResultOut,
     DayTaskOut,
 )
@@ -29,6 +30,7 @@ from app.services.analysis_context import (
     load_exception_dates,
     to_collaborator_input,
 )
+from app.services.period_observations import _period_label, fetch_period_observations
 
 router = APIRouter(tags=["dashboard"])
 
@@ -132,6 +134,24 @@ def get_dashboard(
             )
             for item in team_daily_adherence(summaries)
         ],
+    )
+
+
+@router.get("/dashboard/period-observations", response_model=PeriodObservationsOut)
+def get_period_observations(
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    collaborator_id: int | None = None,
+    db: Session = Depends(get_db),
+) -> PeriodObservationsOut:
+    if collaborator_id is not None and db.get(Collaborator, collaborator_id) is None:
+        raise HTTPException(status_code=404, detail="Colaborador não encontrado.")
+    text = fetch_period_observations(db, year, month, collaborator_id)
+    return PeriodObservationsOut(
+        year=year,
+        month=month,
+        period_label=_period_label(year, month),
+        text=text,
     )
 
 
