@@ -153,10 +153,27 @@ def build_service(db: Session) -> AzureDevOpsService:
             pat=pat,
             work_date_field=row.work_date_field or settings.azure_devops_field_work_date,
             activity_field=row.activity_field or settings.azure_devops_field_activity,
+            completed_hours_field=row.completed_hours_field or "",
         )
     if azure_devops_configured_from_env():
         return AzureDevOpsService.from_settings()
     raise AzureDevOpsConfigError("Azure DevOps não configurado.")
+
+
+GENERIC_ACTIVITY_FIELDS = frozenset({"", "Microsoft.VSTS.Common.Activity"})
+GENERIC_COMPLETED_HOURS_FIELDS = frozenset({"", "Microsoft.VSTS.Scheduling.CompletedWork"})
+
+
+def _should_persist_discovered_field(current: str | None, discovered: str, generic: frozenset[str]) -> bool:
+    current_value = (current or "").strip()
+    discovered_value = discovered.strip()
+    if not discovered_value:
+        return False
+    if not current_value:
+        return True
+    if current_value in generic and discovered_value.startswith("Custom."):
+        return True
+    return False
 
 
 def persist_discovered_fields(db: Session, mapping: dict[str, str | None]) -> None:
@@ -166,11 +183,19 @@ def persist_discovered_fields(db: Session, mapping: dict[str, str | None]) -> No
     changed = False
     work_date = (mapping.get("work_date_field") or "").strip()
     activity = (mapping.get("activity_field") or "").strip()
+    completed_hours = (mapping.get("completed_hours_field") or "").strip()
     if work_date and not (row.work_date_field or "").strip():
         row.work_date_field = work_date
         changed = True
-    if activity and not (row.activity_field or "").strip():
+    if _should_persist_discovered_field(row.activity_field, activity, GENERIC_ACTIVITY_FIELDS):
         row.activity_field = activity
+        changed = True
+    if _should_persist_discovered_field(
+        row.completed_hours_field,
+        completed_hours,
+        GENERIC_COMPLETED_HOURS_FIELDS,
+    ):
+        row.completed_hours_field = completed_hours
         changed = True
     if changed:
         row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)

@@ -32,9 +32,10 @@ function issueLine(day: DayResult): string {
 
   if (day.status === 'missing') {
     const entry =
-      day.task_count === 0
+      day.launch_verification?.message ??
+      (day.task_count === 0
         ? 'Nenhuma Task encontrada na importação'
-        : 'Nenhuma hora registrada nas Tasks do dia'
+        : 'Horas executadas insuficientes nas Tasks importadas')
     return `${base} — ${entry} — ${hours} | Faltam: ${formatHours(gap)}`
   }
   if (day.status === 'incomplete') {
@@ -132,13 +133,18 @@ export function InconsistenciesReportPage() {
 
       {!loading && data && (
         <>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <Metric title="Colaboradores analisados" value={String(data.indicators.collaborators)} />
             <Metric title="Colaboradores OK" value={String(data.indicators.ok)} accent="ok" />
             <Metric title="Com inconsistências" value={String(data.indicators.with_issues)} accent="warn" />
             <Metric title="Dias sem lançamento" value={String(data.indicators.missing)} />
             <Metric title="Dias incompletos" value={String(data.indicators.incomplete)} />
             <Metric title="Dias excedentes" value={String(data.indicators.excess)} />
+            <Metric
+              title="Tasks não concluídas"
+              value={String(data.indicators.open_tasks ?? 0)}
+              accent={data.indicators.open_tasks ? 'warn' : undefined}
+            />
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
@@ -250,6 +256,35 @@ function CollaboratorBlock({
             </div>
           )}
 
+          {row.open_tasks.length > 0 && (
+            <div className="mt-3 space-y-1">
+              <p className="text-sm font-medium text-sky-900">
+                Alerta: {row.open_tasks.length}{' '}
+                {row.open_tasks.length === 1 ? 'Task' : 'Tasks'} no mês ainda não Concluída(s) no Azure
+                (não impacta aderência de horas).
+              </p>
+              <ul className="space-y-1.5">
+                {row.open_tasks.map((task) => (
+                  <li
+                    key={`${task.task_id}-${task.work_date}`}
+                    className="rounded-md border border-sky-200/80 bg-sky-50/50 px-2 py-1.5 text-sm"
+                  >
+                    <p className="font-medium">
+                      #{task.task_id} — {task.title}
+                    </p>
+                    <p className="text-muted">
+                      {formatDate(task.work_date)}
+                      {' · '}
+                      Situação: {task.state_label}
+                      {task.completed_hours != null ? ` · ${formatHours(task.completed_hours)}` : ''}
+                      {task.activity_category ? ` · ${task.activity_category}` : ''}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           <div className="mt-3">
             <Link
               className="text-sm text-accent hover:underline"
@@ -282,7 +317,24 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
 
       <StatusBadge status={day.status} />
 
-      {day.status === 'missing' && day.tasks.length === 0 && (
+      {day.launch_verification && (
+        <div className="space-y-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <p>{day.launch_verification.message}</p>
+          {(day.launch_verification.tasks?.length ?? 0) > 0 && (
+            <ul className="space-y-1 text-amber-950">
+              {day.launch_verification.tasks!.map((task) => (
+                <li key={task.task_id}>
+                  #{task.task_id} — {task.title} · {task.state_label}
+                  {task.completed_hours != null ? ` · executadas: ${formatHours(task.completed_hours)}` : ''}
+                  {task.estimated_hours != null ? ` · estimadas: ${formatHours(task.estimated_hours)}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {day.status === 'missing' && day.tasks.length === 0 && !day.launch_verification && (
         <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
           Não existe lançamento para este dia na importação do Azure Boards.
         </p>
@@ -303,7 +355,7 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
                 </p>
                 <p className="text-sm text-muted">
                   {task.activity_category ? `${task.activity_category} · ` : ''}
-                  {task.completed_hours != null ? formatHours(task.completed_hours) : 'Horas não informadas'}
+                  {task.completed_hours != null ? formatHours(task.completed_hours) : 'Horas executadas não informadas'}
                   {task.state ? ` · ${formatAzureState(task.state)}` : ''}
                 </p>
               </li>

@@ -6,10 +6,12 @@ from app.analysis.engine import (
     STATUS_EXCESS,
     STATUS_INCOMPLETE,
     STATUS_MISSING,
+    ActivityInput,
     CollaboratorSummary,
     DayResult,
     analyze_team,
 )
+from app.services.open_tasks_report import collect_non_completed_tasks
 
 PENDING_STATUSES = {STATUS_MISSING, STATUS_INCOMPLETE, STATUS_EXCESS}
 SITUATION_OK = "ok"
@@ -64,13 +66,16 @@ def build_monthly_report(
     month: int,
     situation: str | None = None,
     issue_type: str | None = None,
+    activities: list[ActivityInput] | None = None,
 ) -> dict:
+    activity_rows = activities or []
     rows: list[dict] = []
     ok_count = 0
     pending_count = 0
     total_missing = 0
     total_incomplete = 0
     total_excess = 0
+    total_open_tasks = 0
 
     for summary in summaries:
         ok = is_collaborator_ok(summary)
@@ -82,6 +87,14 @@ def build_monthly_report(
         total_missing += summary.missing
         total_incomplete += summary.incomplete
         total_excess += summary.excess
+
+        open_tasks = collect_non_completed_tasks(
+            activity_rows,
+            summary.collaborator.id,
+            year,
+            month,
+        )
+        total_open_tasks += len(open_tasks)
 
         issues = pending_days(summary)
         if issue_type:
@@ -100,6 +113,7 @@ def build_monthly_report(
                 "situation": row_situation,
                 "summary_text": build_summary_text(summary),
                 "pending_days": issues,
+                "open_tasks": open_tasks,
             }
         )
 
@@ -120,6 +134,7 @@ def build_monthly_report(
             "missing": total_missing,
             "incomplete": total_incomplete,
             "excess": total_excess,
+            "open_tasks": total_open_tasks,
         },
         "rows": rows,
     }
@@ -137,4 +152,11 @@ def analyze_monthly_team(
     all_absences=None,
 ) -> dict:
     summaries = analyze_team(collaborators, activities, exception_dates, year, month, today, all_absences)
-    return build_monthly_report(summaries, year, month, situation, issue_type)
+    return build_monthly_report(
+        summaries,
+        year,
+        month,
+        situation,
+        issue_type,
+        activities,
+    )

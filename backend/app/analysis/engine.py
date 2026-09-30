@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
+from app.services.azure_state_labels import is_azure_state_completed
+
 STATUS_REGULAR = "regular"
 STATUS_INCOMPLETE = "incomplete"
 STATUS_MISSING = "missing"
@@ -47,6 +49,7 @@ class ActivityInput:
     collaborator_id: int | None
     work_date: date
     completed_hours: Decimal | None
+    estimated_hours: Decimal | None = None
     state: str | None = None
     project: str | None = None
     activity_category: str | None = None
@@ -60,6 +63,7 @@ class DayTask:
     state: str | None
     project: str | None
     activity_category: str | None = None
+    estimated_hours: Decimal | None = None
 
 
 @dataclass
@@ -126,15 +130,48 @@ def classify_status(expected: Decimal, executed: Decimal) -> str:
     return STATUS_REGULAR
 
 
+def effective_task_hours(task: ActivityInput, daily_hours: Decimal) -> Decimal:
+    if task.completed_hours is not None and task.completed_hours > 0:
+        return q(task.completed_hours)
+    if is_azure_state_completed(task.state):
+        if task.estimated_hours is not None and task.estimated_hours > 0:
+            return q(task.estimated_hours)
+        return q(daily_hours)
+    if task.completed_hours is None:
+        if task.estimated_hours is not None and task.estimated_hours > 0:
+            return q(task.estimated_hours)
+        return q(0)
+    return q(0)
+
+
 def executed_for_day(
     tasks: list[ActivityInput],
     daily_hours: Decimal,
 ) -> tuple[Decimal, str]:
     if not tasks:
         return q(0), HOURS_NONE
-    logged = [t.completed_hours for t in tasks if t.completed_hours is not None]
-    if logged:
-        return q(sum(logged, Decimal("0"))), HOURS_LOGGED
+
+    adherence_total = Decimal("0")
+    has_measurable_hours = False
+    has_logged_positive = False
+
+    for task in tasks:
+        if task.completed_hours is not None and task.completed_hours > 0:
+            adherence_total += q(task.completed_hours)
+            has_measurable_hours = True
+            has_logged_positive = True
+            continue
+        if is_azure_state_completed(task.state):
+            adherence_total += effective_task_hours(task, daily_hours)
+            has_measurable_hours = True
+            if task.completed_hours is not None and task.completed_hours > 0:
+                has_logged_positive = True
+
+    if has_measurable_hours:
+        total = q(adherence_total)
+        return total, HOURS_LOGGED if has_logged_positive else HOURS_PRESENCE
+
+    # Tasks importadas no dia (ex.: Novo, Em andamento) contam como lançamento — presença.
     return q(daily_hours), HOURS_PRESENCE
 
 
@@ -200,6 +237,9 @@ def analyze_collaborator(
                         state=task.state,
                         project=task.project,
                         activity_category=task.activity_category,
+                        estimated_hours=q(task.estimated_hours)
+                        if task.estimated_hours is not None
+                        else None,
                     )
                     for task in sorted(day_tasks, key=lambda item: item.task_id)
                 ],
@@ -229,6 +269,7 @@ def analyze_collaborator(
                     state=task.state,
                     project=task.project,
                     activity_category=task.activity_category,
+                    estimated_hours=q(task.estimated_hours) if task.estimated_hours is not None else None,
                 )
                 for task in sorted(day_tasks, key=lambda item: item.task_id)
             ],

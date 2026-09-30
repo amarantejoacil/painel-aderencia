@@ -57,6 +57,21 @@ def test_map_work_item_skips_without_work_date() -> None:
     assert reason == "Data de referência ausente ou inválida."
 
 
+def test_map_work_item_reads_custom_atividade_when_microsoft_field_empty() -> None:
+    item = _sample_item()
+    item["fields"]["Microsoft.VSTS.Common.Activity"] = None
+    item["fields"]["Custom.Atividade"] = "Gerência"
+    mapped, reason = map_work_item(
+        item,
+        work_date_field="Custom.DataReferencia",
+        activity_field="Microsoft.VSTS.Common.Activity",
+        completed_hours_field="Custom.Horasexecutadas",
+    )
+    assert mapped is not None
+    assert reason is None
+    assert mapped.activity_category == "Gerência"
+
+
 def test_map_work_item_uses_custom_completed_hours_field() -> None:
     item = _sample_item(completed=None)
     item["fields"]["Custom.Horasexecutadas"] = 8.0

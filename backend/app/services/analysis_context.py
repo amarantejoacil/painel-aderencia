@@ -31,6 +31,7 @@ def load_activity_inputs(db: Session) -> list[ActivityInput]:
             collaborator_id=row.collaborator_id,
             work_date=row.work_date,
             completed_hours=row.completed_hours,
+            estimated_hours=row.estimated_hours,
             state=row.state,
             project=row.project,
             activity_category=row.activity_category,

@@ -196,6 +196,21 @@ class DayTaskOut(BaseModel):
     activity_category: str | None = None
 
 
+class DayLaunchVerificationTaskOut(BaseModel):
+    task_id: str
+    title: str
+    state_label: str
+    completed_hours: Decimal | None = None
+    estimated_hours: Decimal | None = None
+    effective_hours: Decimal | None = None
+
+
+class DayLaunchVerificationOut(BaseModel):
+    kind: str
+    message: str
+    tasks: list[DayLaunchVerificationTaskOut] = []
+
+
 class DayResultOut(BaseModel):
     date: date
     expected: Decimal
@@ -207,6 +222,7 @@ class DayResultOut(BaseModel):
     tasks: list[DayTaskOut] = []
     absence_type: str | None = None
     absence_note: str | None = None
+    launch_verification: DayLaunchVerificationOut | None = None
 
 
 class CollaboratorSummaryOut(BaseModel):
@@ -252,6 +268,17 @@ class CollaboratorAnalysisOut(BaseModel):
     days: list[DayResultOut]
 
 
+class ReportOpenTaskOut(BaseModel):
+    task_id: str
+    title: str
+    work_date: date
+    state: str | None = None
+    state_label: str
+    completed_hours: Decimal | None = None
+    activity_category: str | None = None
+    project: str | None = None
+
+
 class MonthlyReportRowOut(BaseModel):
     collaborator: CollaboratorOut
     situation: str
@@ -261,6 +288,7 @@ class MonthlyReportRowOut(BaseModel):
     excess: int
     summary_text: str
     pending_days: list[DayResultOut] = []
+    open_tasks: list[ReportOpenTaskOut] = []
 
 
 class MonthlyReportOut(BaseModel):

@@ -140,6 +140,19 @@ export type DayTask = {
   activity_category: string | null
 }
 
+export type DayLaunchVerification = {
+  kind: string
+  message: string
+  tasks?: Array<{
+    task_id: string
+    title: string
+    state_label: string
+    completed_hours?: number | string | null
+    estimated_hours?: number | string | null
+    effective_hours?: number | string | null
+  }>
+}
+
 export type DayResult = {
   date: string
   expected: number | string
@@ -151,6 +164,7 @@ export type DayResult = {
   tasks: DayTask[]
   absence_type?: string | null
   absence_note?: string | null
+  launch_verification?: DayLaunchVerification | null
 }
 
 export type CollaboratorAbsence = {
@@ -212,6 +226,17 @@ export type CollaboratorAnalysis = {
   days: DayResult[]
 }
 
+export type ReportOpenTask = {
+  task_id: string
+  title: string
+  work_date: string
+  state: string | null
+  state_label: string
+  completed_hours: number | string | null
+  activity_category?: string | null
+  project?: string | null
+}
+
 export type InconsistenciesReportRow = {
   collaborator: Collaborator
   situation: 'ok' | 'pending'
@@ -221,6 +246,7 @@ export type InconsistenciesReportRow = {
   excess: number
   summary_text: string
   pending_days: DayResult[]
+  open_tasks: ReportOpenTask[]
 }
 
 export type InconsistenciesReport = {
@@ -233,6 +259,7 @@ export type InconsistenciesReport = {
     missing: number
     incomplete: number
     excess: number
+    open_tasks: number
   }
   rows: InconsistenciesReportRow[]
 }

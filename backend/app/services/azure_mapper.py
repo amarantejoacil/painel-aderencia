@@ -81,10 +81,48 @@ def _resolve_completed_hours(
     fields: dict[str, Any],
     completed_hours_field: str,
 ) -> Decimal | None:
-    primary = _parse_azure_hours(_field_value(fields, completed_hours_field))
-    if primary is not None:
-        return primary
-    return _parse_azure_hours(_field_value(fields, "Microsoft.VSTS.Scheduling.CompletedWork"))
+    fallbacks = (
+        completed_hours_field,
+        "Custom.Horasexecutadas",
+        "Microsoft.VSTS.Scheduling.CompletedWork",
+    )
+    seen: set[str] = set()
+    for field_name in fallbacks:
+        if not field_name or field_name in seen:
+            continue
+        seen.add(field_name)
+        parsed = _parse_azure_hours(_field_value(fields, field_name))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _resolve_estimated_hours(fields: dict[str, Any]) -> Decimal | None:
+    fallbacks = (
+        "Custom.Horasestimada",
+        "Microsoft.VSTS.Scheduling.OriginalEstimate",
+    )
+    for field_name in fallbacks:
+        parsed = _parse_azure_hours(_field_value(fields, field_name))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _resolve_activity_category(
+    fields: dict[str, Any],
+    activity_field: str | None,
+) -> str | None:
+    candidates: list[str] = []
+    if activity_field:
+        candidates.append(activity_field)
+    if "Custom.Atividade" not in candidates:
+        candidates.append("Custom.Atividade")
+    for field_name in candidates:
+        raw_category = _field_value(fields, field_name)
+        if raw_category is not None and str(raw_category).strip():
+            return str(raw_category).strip()
+    return None
 
 
 def map_work_item(
@@ -108,11 +146,7 @@ def map_work_item(
     if not assignee_name:
         return None, "Responsável (Assigned To) ausente ou inválido."
 
-    activity_category = None
-    if activity_field:
-        raw_category = _field_value(fields, activity_field)
-        if raw_category is not None and str(raw_category).strip():
-            activity_category = str(raw_category).strip()
+    activity_category = _resolve_activity_category(fields, activity_field)
 
     activity = NormalizedActivity(
         task_id=str(task_id_raw),
@@ -122,7 +156,7 @@ def map_work_item(
         work_date=work_date,
         work_item_type=str(_field_value(fields, "System.WorkItemType") or "").strip() or None,
         completed_hours=_resolve_completed_hours(fields, completed_hours_field),
-        estimated_hours=_parse_azure_hours(_field_value(fields, "Microsoft.VSTS.Scheduling.OriginalEstimate")),
+        estimated_hours=_resolve_estimated_hours(fields),
         state=str(_field_value(fields, "System.State") or "").strip() or None,
         project=str(_field_value(fields, "System.AreaPath") or _field_value(fields, "System.TeamProject") or "").strip()
         or None,

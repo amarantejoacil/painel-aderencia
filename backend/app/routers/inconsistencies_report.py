@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.orm import Session
@@ -6,11 +7,14 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas import (
     CollaboratorOut,
+    DayLaunchVerificationOut,
     DayResultOut,
     DayTaskOut,
     MonthlyReportOut,
     MonthlyReportRowOut,
+    ReportOpenTaskOut,
 )
+from app.services.day_launch_verification import verify_day_launch
 from app.services.analysis_context import (
     load_activity_inputs,
     load_collaborator_absences,
@@ -22,7 +26,11 @@ from app.services.monthly_report import analyze_monthly_team
 router = APIRouter(prefix="/inconsistencies-report", tags=["inconsistencies-report"])
 
 
-def _day_out(day) -> DayResultOut:
+def _day_out(day, daily_hours: Decimal) -> DayResultOut:
+    raw_verification = verify_day_launch(day, daily_hours)
+    verification = (
+        DayLaunchVerificationOut(**raw_verification) if raw_verification is not None else None
+    )
     return DayResultOut(
         date=day.date,
         expected=day.expected,
@@ -33,6 +41,7 @@ def _day_out(day) -> DayResultOut:
         task_count=day.task_count,
         absence_type=day.absence_type,
         absence_note=day.absence_note,
+        launch_verification=verification,
         tasks=[
             DayTaskOut(
                 task_id=task.task_id,
@@ -66,7 +75,10 @@ def _row_out(item: dict) -> MonthlyReportRowOut:
         incomplete=summary.incomplete,
         excess=summary.excess,
         summary_text=item["summary_text"],
-        pending_days=[_day_out(day) for day in item["pending_days"]],
+        pending_days=[
+            _day_out(day, summary.collaborator.daily_hours) for day in item["pending_days"]
+        ],
+        open_tasks=[ReportOpenTaskOut(**task) for task in item.get("open_tasks", [])],
     )
 
 
@@ -133,6 +145,29 @@ def export_inconsistencies_report(
                         str(day.executed).replace(".", ","),
                         str(day.difference).replace(".", ","),
                         _csv_cell(_issue_label(day.status)),
+                    ]
+                )
+            )
+
+    lines.append("")
+    lines.append("Tasks com status diferente de Concluído")
+    lines.append("Mês/Ano;Colaborador;ID;Data da atividade;Título;Status;Horas executadas")
+    for item in report["rows"]:
+        collaborator = item["summary"].collaborator
+        for task in item.get("open_tasks", []):
+            hours = ""
+            if task["completed_hours"] is not None:
+                hours = str(task["completed_hours"]).replace(".", ",")
+            lines.append(
+                ";".join(
+                    [
+                        period,
+                        _csv_cell(collaborator.name),
+                        _csv_cell(task["task_id"]),
+                        task["work_date"].strftime("%d/%m/%Y"),
+                        _csv_cell(task["title"]),
+                        _csv_cell(task["state_label"]),
+                        hours,
                     ]
                 )
             )

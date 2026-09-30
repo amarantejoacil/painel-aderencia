@@ -107,6 +107,7 @@ class AzureDevOpsSettings(Base):
     pat_expires_at: Mapped[date | None] = mapped_column(Date, nullable=True)
     work_date_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
     activity_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    completed_hours_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
     last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

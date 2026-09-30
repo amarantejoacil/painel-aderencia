@@ -22,6 +22,13 @@ def ensure_schema(engine: Engine) -> None:
         columns = {column["name"] for column in inspector.get_columns("azure_devops_settings")}
         with engine.begin() as connection:
             _add_column_if_missing(connection, "azure_devops_settings", "projects", "JSONB", columns)
+            _add_column_if_missing(
+                connection,
+                "azure_devops_settings",
+                "completed_hours_field",
+                "VARCHAR(200)",
+                columns,
+            )
 
     if "activities" in tables:
         columns = {column["name"] for column in inspector.get_columns("activities")}

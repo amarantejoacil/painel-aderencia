@@ -48,6 +48,12 @@ COMPLETED_HOURS_PATTERNS = (
     re.compile(r"^completed\s*work$", re.IGNORECASE),
 )
 
+TJMT_EXTRA_WORK_ITEM_FIELDS = (
+    "Custom.Atividade",
+    "Custom.Horasexecutadas",
+    "Custom.Horasestimada",
+)
+
 
 def normalize_project_names(
     projects: list[str] | None = None,
@@ -78,6 +84,7 @@ class AzureDevOpsService:
         pat: str,
         work_date_field: str = "",
         activity_field: str = "",
+        completed_hours_field: str = "",
         project: str | None = None,
         projects: list[str] | None = None,
     ) -> None:
@@ -86,6 +93,7 @@ class AzureDevOpsService:
         self.pat = pat
         self.work_date_field = work_date_field.strip()
         self.activity_field = activity_field.strip()
+        self.completed_hours_field = completed_hours_field.strip()
         self.projects = normalize_project_names(projects, project)
         if not self.projects:
             raise AzureDevOpsConfigError("Informe ao menos um projeto do Azure DevOps.")
@@ -197,14 +205,29 @@ class AzureDevOpsService:
         self._field_catalog = payload.get("value", [])
         return self._field_catalog
 
-    def _match_field(self, patterns: tuple[re.Pattern[str], ...]) -> str | None:
+    def _match_field(
+        self,
+        patterns: tuple[re.Pattern[str], ...],
+        *,
+        prefer_custom: bool = False,
+    ) -> str | None:
+        matches: list[str] = []
         for field in self._load_field_catalog():
             name = str(field.get("name") or "")
             reference = str(field.get("referenceName") or "")
+            if not reference:
+                continue
             for pattern in patterns:
                 if pattern.search(name) or pattern.search(reference):
+                    matches.append(reference)
+                    break
+        if not matches:
+            return None
+        if prefer_custom:
+            for reference in matches:
+                if reference.startswith("Custom."):
                     return reference
-        return None
+        return matches[0]
 
     def resolve_work_date_field(self) -> str:
         if self._resolved_work_date_field:
@@ -223,21 +246,42 @@ class AzureDevOpsService:
     def resolve_activity_field(self) -> str | None:
         if self._resolved_activity_field is not None:
             return self._resolved_activity_field or None
-        if self.activity_field:
-            self._resolved_activity_field = self.activity_field
-            return self._resolved_activity_field or None
-        discovered = self._match_field(ACTIVITY_NAME_PATTERNS)
-        self._resolved_activity_field = discovered or ""
-        return discovered
+        discovered: str | None = None
+        try:
+            discovered = self._match_field(ACTIVITY_NAME_PATTERNS, prefer_custom=True)
+        except AzureDevOpsError:
+            discovered = None
+        configured = self.activity_field
+        if configured.startswith("Custom."):
+            self._resolved_activity_field = configured
+            return configured
+        if discovered:
+            self._resolved_activity_field = discovered
+            return discovered
+        if configured:
+            self._resolved_activity_field = configured
+            return configured
+        self._resolved_activity_field = ""
+        return None
 
     def resolve_completed_hours_field(self) -> str:
         if self._resolved_completed_hours_field:
             return self._resolved_completed_hours_field
         discovered: str | None = None
         try:
-            discovered = self._match_field(COMPLETED_HOURS_PATTERNS)
+            discovered = self._match_field(COMPLETED_HOURS_PATTERNS, prefer_custom=True)
         except AzureDevOpsError:
             pass
+        configured = self.completed_hours_field
+        if configured.startswith("Custom."):
+            self._resolved_completed_hours_field = configured
+            return configured
+        if discovered:
+            self._resolved_completed_hours_field = discovered
+            return discovered
+        if configured:
+            self._resolved_completed_hours_field = configured
+            return configured
         self._resolved_completed_hours_field = (
             discovered or "Microsoft.VSTS.Scheduling.CompletedWork"
         )
@@ -317,6 +361,9 @@ class AzureDevOpsService:
             fields.append(activity_field)
         if completed_hours_field not in fields:
             fields.append(completed_hours_field)
+        for extra in TJMT_EXTRA_WORK_ITEM_FIELDS:
+            if extra not in fields:
+                fields.append(extra)
 
         items: list[dict[str, Any]] = []
         for start in range(0, len(ids), BATCH_SIZE):

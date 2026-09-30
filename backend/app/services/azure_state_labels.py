@@ -19,3 +19,12 @@ def translate_azure_state(state: str | None) -> str:
         return "—"
     key = str(state).strip().lower()
     return AZURE_STATE_LABELS.get(key, state.strip())
+
+
+COMPLETED_AZURE_STATES = frozenset({"closed", "done"})
+
+
+def is_azure_state_completed(state: str | None) -> bool:
+    if not state or not str(state).strip():
+        return False
+    return str(state).strip().lower() in COMPLETED_AZURE_STATES
