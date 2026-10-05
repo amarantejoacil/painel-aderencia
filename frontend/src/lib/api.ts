@@ -96,6 +96,25 @@ export type AzureDevOpsSyncIgnored = {
   reason: string
 }
 
+export type AzureDevOpsSyncPreviewAssignee = {
+  assignee_name: string
+  task_count: number
+  mapped_collaborator_id: number | null
+  mapped_collaborator_name: string | null
+  ignored_by_rule: boolean
+}
+
+export type AzureDevOpsSyncPreview = {
+  period_label: string
+  year: number
+  month: number
+  tasks_found: number
+  mappable_tasks: number
+  mapper_ignored_count: number
+  assignees: AzureDevOpsSyncPreviewAssignee[]
+  saved_ignored_assignees: string[]
+}
+
 export type AzureDevOpsSyncResult = {
   period_label: string
   tasks_found: number
@@ -309,10 +328,15 @@ export const api = {
   getAzureDevOpsStatus: () => request<AzureDevOpsStatus>('/azure-devops/status'),
   testAzureDevOpsConnection: () =>
     request<AzureDevOpsTestResult>('/azure-devops/test-connection', { method: 'POST' }),
-  syncAzureDevOps: (year: number, month: number) =>
-    request<AzureDevOpsSyncResult>('/azure-devops/sync', {
+  previewAzureDevOpsSync: (year: number, month: number) =>
+    request<AzureDevOpsSyncPreview>('/azure-devops/sync-preview', {
       method: 'POST',
       body: JSON.stringify({ year, month }),
+    }),
+  syncAzureDevOps: (year: number, month: number, ignoreAssigneeNames: string[] = []) =>
+    request<AzureDevOpsSyncResult>('/azure-devops/sync', {
+      method: 'POST',
+      body: JSON.stringify({ year, month, ignore_assignee_names: ignoreAssigneeNames }),
     }),
   getAzureDevOpsSettings: () => request<AzureDevOpsSettings>('/settings/azure-devops'),
   listAzureDevOpsProjects: () => request<string[]>('/azure-devops/projects'),

@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Table, Td, Th } from '@/components/ui/table'
+import { AzureSyncPreviewModal } from '@/components/AzureSyncPreviewModal'
 import {
   api,
+  type AzureDevOpsSyncPreview,
   type AzureDevOpsSyncResult,
   type ImportPreview,
   type ImportResult,
@@ -69,6 +71,7 @@ export function ImportPage() {
   const [azureYear, setAzureYear] = useState(2026)
   const [azureMonth, setAzureMonth] = useState(new Date().getMonth() + 1)
   const [syncResult, setSyncResult] = useState<AzureDevOpsSyncResult | null>(null)
+  const [azurePreview, setAzurePreview] = useState<AzureDevOpsSyncPreview | null>(null)
 
   const months = useMemo(
     () =>
@@ -143,7 +146,7 @@ export function ImportPage() {
     }
   }
 
-  const syncAzure = async () => {
+  const startAzureSync = async () => {
     const periodExisting = importsForPeriod(imports, azureYear, azureMonth)
     if (periodExisting.length > 0) {
       const confirmed = window.confirm(
@@ -157,8 +160,25 @@ export function ImportPage() {
     setDetails([])
     setSyncResult(null)
     try {
-      const response = await api.syncAzureDevOps(azureYear, azureMonth)
+      const preview = await api.previewAzureDevOpsSync(azureYear, azureMonth)
+      setAzurePreview(preview)
+    } catch (err) {
+      const typed = err as Error & { details?: string[] }
+      setError(typed.message)
+      setDetails(typed.details ?? [])
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const confirmAzureSync = async (ignoreAssigneeNames: string[]) => {
+    setBusy(true)
+    setError(null)
+    setDetails([])
+    try {
+      const response = await api.syncAzureDevOps(azureYear, azureMonth, ignoreAssigneeNames)
       setSyncResult(response)
+      setAzurePreview(null)
       setLastSyncAt(response.last_sync_at)
       setResult(null)
       await loadImports()
@@ -315,9 +335,9 @@ export function ImportPage() {
               <Button
                 type="button"
                 disabled={!azureConfigured || busy}
-                onClick={() => void syncAzure()}
+                onClick={() => void startAzureSync()}
               >
-                {busy ? 'Sincronizando…' : 'Sincronizar Azure DevOps'}
+                {busy ? 'Carregando…' : 'Sincronizar Azure DevOps'}
               </Button>
             </div>
           </Card>
@@ -571,6 +591,17 @@ export function ImportPage() {
             </tbody>
           </Table>
         </Card>
+      )}
+
+      {azurePreview && (
+        <AzureSyncPreviewModal
+          preview={azurePreview}
+          year={azureYear}
+          month={azureMonth}
+          busy={busy}
+          onConfirm={(ignoreAssigneeNames) => void confirmAzureSync(ignoreAssigneeNames)}
+          onCancel={() => setAzurePreview(null)}
+        />
       )}
     </div>
   )

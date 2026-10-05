@@ -29,6 +29,13 @@ def ensure_schema(engine: Engine) -> None:
                 "VARCHAR(200)",
                 columns,
             )
+            _add_column_if_missing(
+                connection,
+                "azure_devops_settings",
+                "ignored_assignees",
+                "JSONB",
+                columns,
+            )
 
     if "activities" in tables:
         columns = {column["name"] for column in inspector.get_columns("activities")}

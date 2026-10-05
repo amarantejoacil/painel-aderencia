@@ -54,14 +54,20 @@ def test_sync_creates_merged_batch(client) -> None:
                 work_date_field="Custom.DataReferencia",
             )
             build_mock.return_value = service
-            with patch.object(AzureDevOpsService, "discover_field_mapping", return_value={
+            mapping = {
                 "work_date_field": "Custom.DataReferencia",
                 "activity_field": "Custom.Atividade",
-            }):
-                with patch.object(AzureDevOpsService, "query_task_ids", return_value=[9001]):
-                    with patch.object(AzureDevOpsService, "fetch_work_items", return_value=[{"id": 9001, "fields": {}}]):
-                        with patch("app.routers.azure_devops.map_work_items", return_value=(mapped, [])):
-                            response = client.post("/api/azure-devops/sync", json={"year": 2026, "month": 8})
+                "completed_hours_field": "Custom.Horasexecutadas",
+            }
+            with patch(
+                "app.routers.azure_devops.fetch_and_map_period",
+                return_value=(mapped, [], 1, mapping),
+            ):
+                with patch("app.routers.azure_devops.get_ignored_assignees", return_value=[]):
+                    response = client.post(
+                        "/api/azure-devops/sync",
+                        json={"year": 2026, "month": 8, "ignore_assignee_names": []},
+                    )
 
     assert response.status_code == 200
     body = response.json()

@@ -145,9 +145,29 @@ class AzureDevOpsFieldProbeOut(BaseModel):
     selected_mapping: dict[str, str | None] = {}
 
 
+class AzureSyncPreviewAssigneeOut(BaseModel):
+    assignee_name: str
+    task_count: int
+    mapped_collaborator_id: int | None = None
+    mapped_collaborator_name: str | None = None
+    ignored_by_rule: bool = False
+
+
+class AzureDevOpsSyncPreviewOut(BaseModel):
+    period_label: str
+    year: int
+    month: int
+    tasks_found: int
+    mappable_tasks: int
+    mapper_ignored_count: int
+    assignees: list[AzureSyncPreviewAssigneeOut]
+    saved_ignored_assignees: list[str] = Field(default_factory=list)
+
+
 class AzureDevOpsSyncIn(BaseModel):
     year: int = Field(ge=2000, le=2100)
     month: int = Field(ge=1, le=12)
+    ignore_assignee_names: list[str] = Field(default_factory=list)
 
 
 class AzureDevOpsSyncIgnoredOut(BaseModel):

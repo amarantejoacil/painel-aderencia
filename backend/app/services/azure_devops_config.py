@@ -176,6 +176,21 @@ def _should_persist_discovered_field(current: str | None, discovered: str, gener
     return False
 
 
+def get_ignored_assignees(db: Session) -> list[str]:
+    row = get_settings_row(db)
+    if not row or not row.ignored_assignees:
+        return []
+    return [str(name).strip() for name in row.ignored_assignees if str(name).strip()]
+
+
+def save_ignored_assignees(db: Session, names: list[str]) -> None:
+    row = _ensure_row(db)
+    cleaned = sorted({name.strip() for name in names if name and name.strip()}, key=str.casefold)
+    row.ignored_assignees = cleaned
+    row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+
+
 def persist_discovered_fields(db: Session, mapping: dict[str, str | None]) -> None:
     row = get_settings_row(db)
     if not row:

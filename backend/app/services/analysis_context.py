@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 
 from app.analysis.engine import AbsenceInput, ActivityInput, CollaboratorInput
 from app.models import Activity, CalendarException, Collaborator, CollaboratorAbsence, ImportBatch
+from app.services.azure_devops_config import get_ignored_assignees
+from app.services.csv_parser import normalize_name
 
 
 def to_collaborator_input(item: Collaborator) -> CollaboratorInput:
@@ -50,7 +52,14 @@ def load_calendar_exceptions_by_date(db: Session) -> dict[date, CalendarExceptio
 
 
 def load_collaborator_inputs(db: Session) -> list[CollaboratorInput]:
-    return [to_collaborator_input(item) for item in db.scalars(select(Collaborator)).all()]
+    ignored = {normalize_name(name) for name in get_ignored_assignees(db)}
+    rows = db.scalars(select(Collaborator)).all()
+    eligible = [
+        item
+        for item in rows
+        if normalize_name(item.azure_name) not in ignored and normalize_name(item.name) not in ignored
+    ]
+    return [to_collaborator_input(item) for item in eligible]
 
 
 def _expand_absence_dates(start: date, end: date) -> list[date]:
