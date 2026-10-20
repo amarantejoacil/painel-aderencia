@@ -1,0 +1,32 @@
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm 16mm;
+  }
+
+  body {
+    background: white !important;
+    font-size: 11pt;
+    line-height: 1.45;
+  }
+
+  .sprint-analysis-print {
+    max-width: none !important;
+  }
+
+  .sprint-analysis-print section,
+  .sprint-analysis-print details,
+  .sprint-analysis-print li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .sprint-analysis-print table {
+    font-size: 9pt;
+  }
+
+  .sprint-analysis-print a {
+    color: inherit;
+    text-decoration: none;
+  }
+}

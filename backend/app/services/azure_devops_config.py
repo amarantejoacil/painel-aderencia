@@ -191,6 +191,37 @@ def save_ignored_assignees(db: Session, names: list[str]) -> None:
     db.commit()
 
 
+def get_ignored_project_scope_keys(db: Session) -> list[str]:
+    row = get_settings_row(db)
+    if not row or not row.ignored_project_scope_keys:
+        return []
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw in row.ignored_project_scope_keys:
+        key = str(raw or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(key)
+    return cleaned
+
+
+def save_ignored_project_scope_keys(db: Session, keys: list[str]) -> list[str]:
+    row = _ensure_row(db)
+    seen: set[str] = set()
+    cleaned: list[str] = []
+    for raw in keys:
+        key = str(raw or "").strip()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        cleaned.append(key)
+    row.ignored_project_scope_keys = cleaned
+    row.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+    db.commit()
+    return cleaned
+
+
 def persist_discovered_fields(db: Session, mapping: dict[str, str | None]) -> None:
     row = get_settings_row(db)
     if not row:

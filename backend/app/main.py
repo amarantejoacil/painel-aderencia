@@ -15,6 +15,8 @@ from app.routers import (
     dashboard,
     imports,
     inconsistencies_report,
+    project_tracking,
+    time_entries,
     work_releases,
 )
 from app.routers import settings as settings_router
@@ -57,6 +59,8 @@ app.include_router(settings_router.router, prefix="/api")
 app.include_router(activities_export.router, prefix="/api")
 app.include_router(dashboard.router, prefix="/api")
 app.include_router(inconsistencies_report.router, prefix="/api")
+app.include_router(project_tracking.router, prefix="/api")
+app.include_router(time_entries.router, prefix="/api")
 
 
 @app.get("/api/health")

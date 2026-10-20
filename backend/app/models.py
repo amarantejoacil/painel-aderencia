@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Numeric, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -109,6 +109,130 @@ class AzureDevOpsSettings(Base):
     activity_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
     completed_hours_field: Mapped[str | None] = mapped_column(String(200), nullable=True)
     ignored_assignees: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    ignored_project_scope_keys: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+AI_PROVIDER_GOOGLE_GEMINI = "google_gemini"
+
+
+class AiSettings(Base):
+    __tablename__ = "ai_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    provider: Mapped[str] = mapped_column(String(50), default=AI_PROVIDER_GOOGLE_GEMINI)
+    encrypted_api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_test_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_test_ok: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_test_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class SprintAiReport(Base):
+    __tablename__ = "sprint_ai_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), index=True)
+    scope_key: Mapped[str] = mapped_column(String(400))
+    scope_label: Mapped[str] = mapped_column(String(300))
+    team_project: Mapped[str] = mapped_column(String(200))
+    area_path: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    year: Mapped[int] = mapped_column(Integer)
+    month: Mapped[int] = mapped_column(Integer)
+    sprint_keys: Mapped[list] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    stories_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tasks_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evidence: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    pack: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ExecutiveReport(Base):
+    __tablename__ = "executive_reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    report_type: Mapped[str] = mapped_column(String(30), index=True)
+    scope_key: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    scope_keys: Mapped[list] = mapped_column(JSONB)
+    scope_label: Mapped[str] = mapped_column(String(500))
+    team_project: Mapped[str] = mapped_column(String(200))
+    area_path: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    year: Mapped[int] = mapped_column(Integer)
+    month: Mapped[int] = mapped_column(Integer)
+    sprint_keys: Mapped[list] = mapped_column(JSONB)
+    notes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    stories_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tasks_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evidence: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    pack: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TimeEntrySettings(Base):
+    __tablename__ = "time_entry_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    azure_display_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    azure_unique_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    azure_identity_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    story_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    story_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    story_state: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    story_project: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    story_area_path: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    story_iteration_path: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    story_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    story_accessible: Mapped[bool] = mapped_column(Boolean, default=True)
+    suggested_hours: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("8.00"))
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class TimeEntryOperation(Base):
+    __tablename__ = "time_entry_operations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    operation_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    story_id: Mapped[int] = mapped_column(Integer, index=True)
+    story_title: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    story_project: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    reference_date: Mapped[date] = mapped_column(Date, index=True)
+    title: Mapped[str] = mapped_column(String(256))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    estimated_hours: Mapped[Decimal] = mapped_column(Numeric(6, 2))
+    assignee_name: Mapped[str] = mapped_column(String(200))
+    task_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    task_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    task_state: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    justification: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+
+
+class AiUsageLog(Base):
+    __tablename__ = "ai_usage_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    module: Mapped[str] = mapped_column(String(100), index=True)
+    model: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(30))
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(500), nullable=True)

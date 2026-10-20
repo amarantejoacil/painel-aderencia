@@ -36,6 +36,13 @@ def ensure_schema(engine: Engine) -> None:
                 "JSONB",
                 columns,
             )
+            _add_column_if_missing(
+                connection,
+                "azure_devops_settings",
+                "ignored_project_scope_keys",
+                "JSONB",
+                columns,
+            )
 
     if "activities" in tables:
         columns = {column["name"] for column in inspector.get_columns("activities")}

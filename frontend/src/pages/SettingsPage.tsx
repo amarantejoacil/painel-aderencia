@@ -5,8 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { GeminiSettingsSection } from '@/components/settings/GeminiSettingsSection'
+import { ProjectTrackingScopesSection } from '@/components/settings/ProjectTrackingScopesSection'
 import { api, type AzureDevOpsSettings } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
+import { cn } from '@/lib/utils'
+
+type SettingsTab = 'azure' | 'projects' | 'ai'
 
 type FormState = {
   base_url: string
@@ -25,6 +30,7 @@ const EMPTY_FORM: FormState = {
 }
 
 export function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<SettingsTab>('azure')
   const [settings, setSettings] = useState<AzureDevOpsSettings | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [remoteProjects, setRemoteProjects] = useState<string[]>([])
@@ -163,10 +169,47 @@ export function SettingsPage() {
       <div>
         <h2 className="text-2xl font-semibold">Configurações</h2>
         <p className="mt-1 text-sm text-muted">
-          Gerencie a integração com Azure DevOps utilizada pela sincronização de Tasks.
+          Integrações do painel: Azure DevOps e inteligência artificial (Google Gemini).
         </p>
       </div>
 
+      <div className="flex flex-wrap gap-2 border-b border-line pb-1">
+        <button
+          type="button"
+          className={cn(
+            'rounded-t-md px-4 py-2 text-sm font-medium',
+            activeTab === 'azure' ? 'bg-paper text-accent shadow-sm' : 'text-muted hover:text-ink',
+          )}
+          onClick={() => setActiveTab('azure')}
+        >
+          Azure DevOps
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'rounded-t-md px-4 py-2 text-sm font-medium',
+            activeTab === 'projects' ? 'bg-paper text-accent shadow-sm' : 'text-muted hover:text-ink',
+          )}
+          onClick={() => setActiveTab('projects')}
+        >
+          Acompanhamento de Projetos
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'rounded-t-md px-4 py-2 text-sm font-medium',
+            activeTab === 'ai' ? 'bg-paper text-accent shadow-sm' : 'text-muted hover:text-ink',
+          )}
+          onClick={() => setActiveTab('ai')}
+        >
+          Inteligência Artificial
+        </button>
+      </div>
+
+      {activeTab === 'projects' ? <ProjectTrackingScopesSection /> : null}
+      {activeTab === 'ai' ? <GeminiSettingsSection /> : null}
+
+      {activeTab === 'azure' ? (
       <Card className="p-5">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -361,7 +404,9 @@ export function SettingsPage() {
           </div>
         </form>
       </Card>
+      ) : null}
 
+      {activeTab === 'azure' ? (
       <p className="text-sm text-muted">
         A sincronização na página de{' '}
         <Link to="/importacao" className="font-medium text-accent hover:underline">
@@ -369,6 +414,7 @@ export function SettingsPage() {
         </Link>{' '}
         busca Tasks em todos os projetos selecionados. A importação CSV permanece independente.
       </p>
+      ) : null}
     </div>
   )
 }

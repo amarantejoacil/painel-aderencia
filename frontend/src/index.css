@@ -25,3 +25,24 @@ body {
 #root {
   min-height: 100vh;
 }
+
+@keyframes sprint-analysis-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
+
+.sprint-analysis-progress {
+  animation: sprint-analysis-progress 1.85s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sprint-analysis-progress {
+    animation: none;
+    width: 100% !important;
+    opacity: 0.35;
+  }
+}

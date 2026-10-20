@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -207,6 +208,55 @@ class AzureDevOpsSettingsUpdate(BaseModel):
     pat_expires_at: date | None = None
 
 
+class ProjectTrackingScopeOptionOut(BaseModel):
+    key: str
+    label: str
+    team_project: str
+    area_path: str
+
+
+class ProjectTrackingScopeSettingsOut(BaseModel):
+    scopes: list[ProjectTrackingScopeOptionOut] = Field(default_factory=list)
+    ignored_scope_keys: list[str] = Field(default_factory=list)
+
+
+class ProjectTrackingIgnoredScopesUpdate(BaseModel):
+    ignored_scope_keys: list[str] = Field(default_factory=list, max_length=200)
+
+
+class AiSettingsOut(BaseModel):
+    provider: str
+    provider_label: str
+    status: Literal["not_configured", "configured", "error"]
+    api_key_configured: bool = False
+    model_id: str | None = None
+    enabled: bool = False
+    last_test_at: datetime | None = None
+    last_test_ok: bool | None = None
+    last_test_message: str | None = None
+
+
+class AiSettingsUpdate(BaseModel):
+    api_key: str | None = Field(default=None, max_length=500)
+    clear_api_key: bool = False
+    model_id: str | None = Field(default=None, max_length=200)
+    enabled: bool | None = None
+
+
+class AiModelOut(BaseModel):
+    id: str
+    display_name: str | None = None
+
+
+class AiModelsOut(BaseModel):
+    models: list[AiModelOut] = Field(default_factory=list)
+
+
+class AiTestOut(BaseModel):
+    ok: bool
+    message: str
+
+
 class DayTaskOut(BaseModel):
     task_id: str
     title: str
@@ -316,3 +366,519 @@ class MonthlyReportOut(BaseModel):
     month: int
     indicators: dict
     rows: list[MonthlyReportRowOut]
+
+
+class ProjectScopeOut(BaseModel):
+    key: str
+    label: str
+    team_project: str
+    area_path: str | None = None
+
+
+class ProjectOverviewIndicatorsOut(BaseModel):
+    projects_tracked: int
+    sprints_in_period: int
+    stories_created: int
+    stories_completed: int
+    stories_in_progress: int
+    stories_pending: int
+    stories_added_after_start: int
+    impediments_identified: int
+
+
+class ProjectOverviewCardOut(BaseModel):
+    scope_key: str
+    label: str
+    team_project: str
+    area_path: str | None = None
+    sprints: int
+    stories_created: int
+    stories_completed: int
+    stories_in_progress: int
+    stories_pending: int
+
+
+class ProjectOverviewOut(BaseModel):
+    year: int
+    month: int
+    scope_key: str | None = None
+    indicators: ProjectOverviewIndicatorsOut
+    project_cards: list[ProjectOverviewCardOut]
+    limitations: list[str] = Field(default_factory=list)
+    data_source: str = "azure_devops"
+
+
+class ProjectSprintRowOut(BaseModel):
+    sprint_key: str
+    team_project: str
+    name: str
+    path: str
+    start_date: str
+    finish_date: str
+    status: str
+    stories_total: int
+    stories_created_in_sprint: int
+    stories_completed_in_sprint: int
+    stories_pending: int
+    completion_percent: float | None = None
+    completion_denominator: int
+    completion_numerator: int
+
+
+class ProjectSprintsOut(BaseModel):
+    year: int
+    month: int
+    scope_key: str | None = None
+    rows: list[ProjectSprintRowOut]
+    limitations: list[str] = Field(default_factory=list)
+
+
+class SprintRefOut(BaseModel):
+    sprint_key: str
+    name: str
+    start_date: str
+    finish_date: str
+    status: str
+
+
+class ProjectSprintMetricsOut(BaseModel):
+    stories_total: int
+    stories_created_in_sprint: int
+    stories_completed_in_sprint: int
+    stories_in_progress: int
+    stories_pending: int
+    stories_added_after_start: int
+    stories_removed: int
+    completion_percent: float | None = None
+    completion_denominator: int
+    completion_numerator: int
+
+
+class ProjectSprintStoryOut(BaseModel):
+    work_item_id: int
+    title: str
+    state_at_start: str | None = None
+    state_at_cut: str | None = None
+    state_current: str | None = None
+    created_at: str | None = None
+    completed_at: str | None = None
+    area_path: str | None = None
+    iteration_current: str | None = None
+    assignee: str | None = None
+    impediment: str | None = None
+    created_in_sprint: bool
+    completed_in_sprint: bool
+    added_after_start: bool
+    azure_url: str
+
+
+class ProjectSprintDetailOut(BaseModel):
+    sprint_key: str
+    team_project: str
+    name: str
+    path: str
+    start_date: str
+    finish_date: str
+    status: str
+    metrics: ProjectSprintMetricsOut
+    limitations: list[str] = Field(default_factory=list)
+    stories: list[ProjectSprintStoryOut] = Field(default_factory=list)
+
+
+class ProjectEvolutionStoryRefOut(BaseModel):
+    work_item_id: int
+    title: str
+    azure_url: str
+    state_at_cut: str | None = None
+    impediment: str | None = None
+
+
+class ProjectEvolutionSprintMetricsOut(BaseModel):
+    stories_total: int
+    stories_completed_in_sprint: int
+    stories_pending: int
+    stories_in_progress: int
+    completion_percent: float | None = None
+
+
+class ProjectEvolutionEntryOut(BaseModel):
+    sprint_key: str
+    team_project: str
+    name: str
+    path: str
+    start_date: str
+    finish_date: str
+    status: str
+    metrics: ProjectEvolutionSprintMetricsOut
+    completed_stories: list[ProjectEvolutionStoryRefOut]
+    pending_stories: list[ProjectEvolutionStoryRefOut]
+    impediments: list[ProjectEvolutionStoryRefOut]
+
+
+class ProjectEvolutionOut(BaseModel):
+    year: int
+    month: int | None = None
+    scope_key: str
+    scope_label: str
+    team_project: str
+    area_path: str | None = None
+    timeline: list[ProjectEvolutionEntryOut]
+    limitations: list[str] = Field(default_factory=list)
+    data_source: str = "azure_devops"
+
+
+class ProjectReportSectionOut(BaseModel):
+    heading: str
+    body: str | None = None
+    bullets: list[str] = Field(default_factory=list)
+
+
+class IndicatorCriterionOut(BaseModel):
+    key: str
+    label: str
+    description: str
+
+
+class ProjectReportOut(BaseModel):
+    report_type: str
+    title: str
+    year: int
+    month: int | None = None
+    scope_key: str | None = None
+    scope_label: str
+    generated_at: str
+    sections: list[ProjectReportSectionOut]
+    full_text: str
+    limitations: list[str] = Field(default_factory=list)
+    data_source: str = "azure_devops"
+    indicator_criteria: list[IndicatorCriterionOut] = Field(default_factory=list)
+
+
+class SprintAnalysisCreate(BaseModel):
+    scope_key: str = Field(min_length=3)
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=1, le=12)
+    sprint_keys: list[str] = Field(min_length=1, max_length=8)
+
+
+class SprintAnalysisLatestOut(BaseModel):
+    report_id: int | None = None
+    status: str | None = None
+    generated_at: str | None = None
+
+
+class SprintAnalysisOut(BaseModel):
+    id: int
+    status: str
+    scope_key: str
+    scope_label: str
+    team_project: str
+    area_path: str | None = None
+    year: int
+    month: int
+    sprint_keys: list[str]
+    model: str | None = None
+    stories_count: int | None = None
+    tasks_count: int | None = None
+    generated_at: str | None = None
+    error_message: str | None = None
+    pack: dict | None = None
+    result: dict | None = None
+    evidence: list | None = None
+
+
+class ExecutiveReportCreate(BaseModel):
+    report_type: Literal["monthly", "sprints", "evolution", "consolidated"]
+    year: int = Field(ge=2000, le=2100)
+    month: int = Field(ge=0, le=12)
+    scope_key: str | None = None
+    sprint_keys: list[str] = Field(default_factory=list, max_length=16)
+
+
+class ExecutiveReportOut(BaseModel):
+    id: int
+    status: str
+    report_type: str
+    scope_key: str | None = None
+    scope_keys: list[str]
+    scope_label: str
+    team_project: str
+    area_path: str | None = None
+    year: int
+    month: int
+    sprint_keys: list[str]
+    model: str | None = None
+    stories_count: int | None = None
+    tasks_count: int | None = None
+    generated_at: str | None = None
+    error_message: str | None = None
+    pack: dict | None = None
+    result: dict | None = None
+    evidence: list | None = None
+
+
+class ExecutiveReportLatestOut(BaseModel):
+    report: ExecutiveReportOut | None = None
+
+
+class StoryLookupIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    story_id: int = Field(gt=0)
+
+
+class StorySearchIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project: str = Field(min_length=1, max_length=200)
+    query: str = Field(min_length=3, max_length=200)
+
+
+class LaunchDefaultsOut(BaseModel):
+    task_type: str
+    activity: str
+    executed_hours: str
+    impediment: str
+    impediment_hours: str
+    state: str
+    assignee: str | None = None
+
+
+class StoryBindingOut(BaseModel):
+    id: int
+    title: str
+    state: str | None = None
+    project: str
+    area_path: str | None = None
+    iteration_path: str | None = None
+    url: str | None = None
+    accessible: bool
+    blocked_reason: str | None = None
+
+
+class TimeEntryContextOut(BaseModel):
+    azure_configured: bool
+    azure_error: str | None = None
+    projects: list[str]
+    assignee_name: str | None = None
+    suggested_hours: Decimal
+    today: date
+    story: StoryBindingOut | None = None
+    defaults: LaunchDefaultsOut
+    adherence_note: str
+
+
+class StoryCandidateOut(StoryBindingOut):
+    pass
+
+
+class EntryInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    reference_date: date
+    title: str = Field(min_length=1, max_length=256)
+    description: str = Field(default="", max_length=4000)
+    estimated_hours: Decimal = Field(default=Decimal("8"), gt=0, le=24)
+
+
+class EntryRegisterIn(EntryInput):
+    operation_key: str = Field(min_length=8, max_length=64)
+    confirm: bool = False
+    acknowledge_duplicate: bool = False
+    justification: str | None = Field(default=None, max_length=500)
+
+
+class DuplicateHitOut(BaseModel):
+    task_id: int | None = None
+    title: str
+    reference_date: date
+    estimated_hours: Decimal | None = None
+    origin: str
+
+
+class EntryPreviewOut(BaseModel):
+    story_id: int
+    story_title: str
+    title: str
+    description: str
+    reference_date: date
+    estimated_hours: Decimal
+    task_type: str
+    activity: str
+    assignee: str
+    state: str
+    duplicates: list[DuplicateHitOut]
+
+
+class EntryRegisterOut(BaseModel):
+    operation_key: str
+    task_id: int | None = None
+    title: str
+    reference_date: date
+    url: str | None = None
+    already_registered: bool = False
+    message: str
+
+
+class TimeEntryDayTaskOut(BaseModel):
+    task_id: int | None = None
+    title: str
+    estimated_hours: Decimal | None = None
+    executed_hours: Decimal | None = None
+    state: str | None = None
+    url: str | None = None
+    origin: Literal["module", "azure"]
+    operation_status: str | None = None
+
+
+class DayTasksOut(BaseModel):
+    date: date
+    azure_checked: bool
+    azure_error: str | None = None
+    tasks: list[TimeEntryDayTaskOut]
+
+
+class ImproveDescriptionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class ImproveDescriptionOut(BaseModel):
+    text: str
+
+
+class LastEntryOut(BaseModel):
+    title: str
+    description: str
+    estimated_hours: Decimal
+    reference_date: date
+
+
+class CalendarDayOut(BaseModel):
+    date: date
+    weekend: bool
+    exception_label: str | None = None
+    exception_type: str | None = None
+    absence_label: str | None = None
+    suggested: bool
+    launch_state: str | None = None
+    status_label: str | None = None
+
+
+class TimeEntryCalendarOut(BaseModel):
+    year: int
+    month: int
+    suggested_hours: Decimal
+    days: list[CalendarDayOut]
+
+
+class BatchRegisterIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: bool
+    items: list[EntryRegisterIn] = Field(min_length=1, max_length=62)
+
+
+class BatchItemResultOut(BaseModel):
+    operation_key: str
+    reference_date: date
+    title: str
+    description: str | None = None
+    estimated_hours: Decimal | None = None
+    status: str
+    message: str
+    task_id: int | None = None
+    url: str | None = None
+    duplicates: list[DuplicateHitOut] = Field(default_factory=list)
+
+
+class BatchPreviewOut(BaseModel):
+    items: list[BatchItemResultOut]
+
+
+class BatchRegisterOut(BaseModel):
+    total: int
+    created: int
+    pending: int
+    failed: int
+    items: list[BatchItemResultOut]
+
+
+class TimeEntryOperationOut(BaseModel):
+    operation_key: str
+    reference_date: date
+    title: str
+    description: str | None = None
+    estimated_hours: Decimal
+    assignee_name: str
+    story_id: int
+    story_title: str | None = None
+    task_id: int | None = None
+    task_state: str | None = None
+    status: str
+    url: str | None = None
+    error_message: str | None = None
+    justification: str | None = None
+    submitted_at: datetime | None = None
+
+
+class ConferenceTaskOut(BaseModel):
+    task_id: str
+    title: str
+    state: str | None = None
+    estimated_hours: Decimal
+    executed_hours: Decimal
+    url: str | None = None
+    project: str | None = None
+
+
+class ConferenceDayOut(BaseModel):
+    date: date
+    estimated_hours: Decimal
+    executed_hours: Decimal
+    recognized_hours: Decimal
+    missing_hours: Decimal
+    expected_hours: Decimal
+    status: str
+    status_label: str
+    hours_source: str
+    hours_source_label: str
+    suggested_hours: Decimal
+    pending: bool
+    tasks: list[ConferenceTaskOut] = Field(default_factory=list)
+
+
+class ConferenceOut(BaseModel):
+    year: int
+    month: int
+    checked_at: datetime
+    assignee_name: str
+    daily_hours: Decimal
+    collaborator_matched: bool
+    adherence: Decimal
+    expected_hours: Decimal
+    recognized_hours: Decimal
+    estimated_hours: Decimal
+    executed_hours: Decimal
+    obligatory_days: int
+    complete_days: int
+    incomplete_days: int
+    missing_days: int
+    excess_days: int
+    dispensed_days: int
+    missing_hours: Decimal
+    pending: list[ConferenceDayOut]
+    days: list[ConferenceDayOut]
+    empty_message: str | None = None
+    executed_limit_note: str
+
+
+class SuggestIn(BaseModel):
+    categories: list[str] = Field(default_factory=list, max_length=15)
+    text: str = Field(default="", max_length=2000)
+    hours: Decimal | None = None
+    existing_titles: list[str] = Field(default_factory=list, max_length=30)
+
+
+class SuggestOut(BaseModel):
+    title: str
+    description: str
+    activities: str | None = None
+    result: str | None = None
+    hours: Decimal | None = None
