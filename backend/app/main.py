@@ -21,6 +21,7 @@ from app.routers import (
 )
 from app.routers import settings as settings_router
 from app.services.azure_devops_config import backfill_projects_column, migrate_env_to_db_if_needed
+from app.services.credentials_security import log_startup_security_warnings, reduce_env_pat_exposure
 from app.seed import seed_if_empty
 
 
@@ -33,6 +34,8 @@ async def lifespan(_app: FastAPI):
         seed_if_empty(db)
         migrate_env_to_db_if_needed(db)
         backfill_projects_column(db)
+        reduce_env_pat_exposure(db)
+        log_startup_security_warnings(db)
     finally:
         db.close()
     yield

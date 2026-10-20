@@ -211,10 +211,25 @@ Aderência (%) = (soma das contribuições dos dias ÷ soma das horas esperadas)
 - **Azure DevOps** — status da integração, última sincronização, escolha de mês/ano, aviso se já existir lote do período, **prévia com exclusão de responsáveis** e confirmação.
 - Histórico unificado de lotes (origem CSV ou Azure) com exclusão por lote.
 
-### Configurações (Azure DevOps)
+### Configurações (Azure DevOps e IA)
 
-- Credenciais e projeto; teste de conexão; descoberta/amostra de campos de Work Item; lista de projetos quando configurado.
-- Campos descobertos na sync podem ser persistidos para mapeamento consistente (data, horas, atividade).
+- **Azure DevOps:** URL base, organização, projetos e **PAT** (Personal Access Token). O token é enviado **apenas no salvamento** (HTTPS); a API **nunca devolve** o PAT — somente `pat_configured: true/false`. No banco fica **criptografado** (`SECRET_ENCRYPTION_KEY` Fernet).
+- **Google Gemini (IA):** chave de API e modelo na mesma tela de Configurações. Também **criptografada no banco**; a API expõe apenas `api_key_configured`.
+- Teste de conexão para Azure e para IA; descoberta de campos de Work Item; escopos de acompanhamento de projetos quando aplicável.
+
+#### Segurança de credenciais (boas práticas)
+
+| O quê | Onde fica | Git |
+|---|---|---|
+| PAT Azure | Banco criptografado (preferencial) ou migração única via `.env` | **Nunca** commitar PAT |
+| Chave Gemini | Banco criptografado via UI | **Nunca** commitar chave |
+| `SECRET_ENCRYPTION_KEY` | Variável de ambiente / `.env` local | **Nunca** commitar; use `.env.example` só com placeholders |
+| Senha PostgreSQL | `.env` / docker-compose local | Valores de exemplo no repositório são só para dev |
+
+- O arquivo **`.env`** e variantes (`.env.local`, etc.) estão no **`.gitignore`**. Use **`.env.example`** como modelo sem segredos reais.
+- Em **produção**, defina sempre **`SECRET_ENCRYPTION_KEY`** (chave Fernet dedicada). Sem ela, o sistema usa fallback derivado da `DATABASE_URL` — aceitável só em desenvolvimento.
+- Após migrar PAT do `.env` para o banco, **remova `AZURE_DEVOPS_PAT`** do `.env` e do `docker-compose`; a API ignora o PAT em ambiente quando já existe token criptografado no banco.
+- **Não** grave tokens em `localStorage`, logs ou mensagens de erro genéricas da UI.
 
 ### Colaboradores
 

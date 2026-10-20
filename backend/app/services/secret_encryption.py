@@ -18,6 +18,11 @@ def _derive_fallback_key() -> bytes:
     return base64.urlsafe_b64encode(digest)
 
 
+def uses_dedicated_encryption_key() -> bool:
+    """True quando SECRET_ENCRYPTION_KEY está definida (recomendado em produção)."""
+    return bool(settings.secret_encryption_key.strip())
+
+
 def _fernet() -> Fernet:
     raw = settings.secret_encryption_key.strip()
     if raw:

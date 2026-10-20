@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
@@ -283,3 +284,4 @@ def migrate_env_to_db_if_needed(db: Session) -> None:
         pat=settings.azure_devops_pat,
         pat_expires_at=None,
     )
+    os.environ.pop("AZURE_DEVOPS_PAT", None)

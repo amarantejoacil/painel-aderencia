@@ -2,9 +2,20 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
-.env
 node_modules/
 dist/
 .DS_Store
 *.log
 .pytest_cache/
+
+# Segredos e credenciais — nunca versionar
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+**/secrets/
+**/service-account*.json

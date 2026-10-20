@@ -1,3 +1,4 @@
+# Segredos: use arquivo .env local (gitignored). Não commite PAT, chaves de API ou SECRET_ENCRYPTION_KEY.
 services:
   db:
     image: postgres:16-alpine
