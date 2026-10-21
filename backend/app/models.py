@@ -118,6 +118,15 @@ class AzureDevOpsSettings(Base):
 AI_PROVIDER_GOOGLE_GEMINI = "google_gemini"
 
 
+class InconsistenciesReportSettings(Base):
+    __tablename__ = "inconsistencies_report_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    copy_intro_requires_review: Mapped[str | None] = mapped_column(Text, nullable=True)
+    copy_intro_ok: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class AiSettings(Base):
     __tablename__ = "ai_settings"
 

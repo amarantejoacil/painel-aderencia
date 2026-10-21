@@ -323,6 +323,7 @@ class AzureDevOpsService:
                 f"SELECT [System.Id] FROM WorkItems "
                 f"WHERE [System.TeamProject] = '{self._escape_wiql(project)}' "
                 f"AND [System.WorkItemType] = 'Task' "
+                f"AND [System.State] <> 'Removed' "
                 f"AND [{work_date_field}] >= '{start.isoformat()}' "
                 f"AND [{work_date_field}] <= '{end.isoformat()}'"
             )

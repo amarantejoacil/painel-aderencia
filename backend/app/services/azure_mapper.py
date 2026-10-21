@@ -8,6 +8,7 @@ from typing import Any
 from app.analysis.engine import q
 from app.services.activity_normalization import NormalizedActivity
 from app.services.azure_devops_errors import AzureDevOpsError
+from app.services.azure_state_labels import is_azure_state_removed
 from app.services.csv_parser import extract_assignee_name
 
 
@@ -138,6 +139,11 @@ def map_work_item(
     if task_id_raw is None or title_raw is None:
         return None, "Task sem ID ou título no Azure."
 
+    state_raw = _field_value(fields, "System.State")
+    state_text = str(state_raw).strip() if state_raw is not None else None
+    if is_azure_state_removed(state_text):
+        return None, "Task com status Removed no Azure (ignorada)."
+
     work_date = _parse_azure_date(_field_value(fields, work_date_field))
     if work_date is None:
         return None, "Data de referência ausente ou inválida."
@@ -157,7 +163,7 @@ def map_work_item(
         work_item_type=str(_field_value(fields, "System.WorkItemType") or "").strip() or None,
         completed_hours=_resolve_completed_hours(fields, completed_hours_field),
         estimated_hours=_resolve_estimated_hours(fields),
-        state=str(_field_value(fields, "System.State") or "").strip() or None,
+        state=state_text,
         project=str(_field_value(fields, "System.AreaPath") or _field_value(fields, "System.TeamProject") or "").strip()
         or None,
         activity_category=activity_category,

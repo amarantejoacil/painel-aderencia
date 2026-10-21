@@ -193,7 +193,10 @@ def persist_azure_merge(
     ).unique().first()
     if latest:
         for activity in latest.activities:
-            by_task_id[activity.task_id] = from_activity_model(activity)
+            model = from_activity_model(activity)
+            if model.work_date.year == year and model.work_date.month == month:
+                continue
+            by_task_id[activity.task_id] = model
 
     for item in incoming:
         if item.work_date.year != year or item.work_date.month != month:

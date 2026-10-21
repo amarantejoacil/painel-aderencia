@@ -616,6 +616,23 @@ def test_suggestion_prompt_separates_found_records_from_the_user_text() -> None:
     assert "Organização de backlog" in marked
     assert "Redija o texto somente a partir delas" in marked
     assert "gerente de projeto do Núcleo de Inteligência Artificial" in prompt
+    assert "contexto genérico do NIA" in prompt
+
+
+def test_fallback_description_adds_generic_nia_context() -> None:
+    parsed = parse_suggestion(
+        "TÍTULO: Atividades de gestão\nDESCRIÇÃO: Texto.\n",
+        informed_hours=None,
+        categories=[
+            "Acompanhamento dos projetos",
+            "Monitoramento de sprints",
+            "Organização de backlog",
+        ],
+    )
+    assert "Núcleo de Inteligência Artificial (NIA)" in parsed.description
+    assert "contemplando" in parsed.description
+    assert "monitoramento de sprints" in parsed.description
+    assert "\n-" not in parsed.description
 
 
 def test_mocked_suggestion_does_not_send_anything_to_azure(db, monkeypatch) -> None:
@@ -677,7 +694,8 @@ def test_suggestion_rejects_garbage_title_and_recovers_from_categories() -> None
         categories=["Monitoramento de sprints", "Planejamento e priorização"],
     )
     assert parsed.title == "Monitoramento de sprints, Planejamento e priorização"
-    assert "Monitoramento de sprints" in parsed.description
+    assert "monitoramento de sprints" in parsed.description.casefold()
+    assert "(NIA)" in parsed.description
     assert "check all" not in parsed.description.casefold()
 
 

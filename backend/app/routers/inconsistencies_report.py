@@ -10,6 +10,7 @@ from app.schemas import (
     DayLaunchVerificationOut,
     DayResultOut,
     DayTaskOut,
+    MonthScheduleContextOut,
     MonthlyReportOut,
     MonthlyReportRowOut,
     ReportOpenTaskOut,
@@ -21,6 +22,7 @@ from app.services.analysis_context import (
     load_collaborator_inputs,
     load_exception_dates,
 )
+from app.services.month_schedule_context import build_month_schedule_context
 from app.services.monthly_report import analyze_monthly_team
 
 router = APIRouter(prefix="/inconsistencies-report", tags=["inconsistencies-report"])
@@ -101,11 +103,13 @@ def get_inconsistencies_report(
         issue_type,
         load_collaborator_absences(db),
     )
+    schedule = build_month_schedule_context(db, year, month)
     return MonthlyReportOut(
         year=report["year"],
         month=report["month"],
         indicators=report["indicators"],
         rows=[_row_out(item) for item in report["rows"]],
+        month_schedule=MonthScheduleContextOut(**schedule),
     )
 
 

@@ -12,12 +12,44 @@ import {
   STATUS_LABEL,
 } from '@/lib/format'
 
+export type KpiMetric =
+  | 'collaborators'
+  | 'expected_hours'
+  | 'executed_hours'
+  | 'adherence'
+  | 'regular_days'
+  | 'incomplete_days'
+  | 'missing_days'
+  | 'excess_days'
+  | 'team_ok'
+  | 'team_review'
+  | 'full_adherence'
+  | 'launch_coverage'
+  | 'hours_gap'
+
 export type ChartSelection =
   | { kind: 'collaborator'; collaboratorId: number }
   | { kind: 'team-status'; situation: 'ok' | 'review' }
   | { kind: 'inconsistency'; collaboratorId: number; status: 'missing' | 'incomplete' | 'excess' }
   | { kind: 'daily'; date: string }
   | { kind: 'day-compliance'; category: 'regular' | 'inconsistent' }
+  | { kind: 'kpi'; metric: KpiMetric }
+
+const KPI_TITLE: Record<KpiMetric, string> = {
+  collaborators: 'Colaboradores analisados',
+  expected_hours: 'Horas esperadas por colaborador',
+  executed_hours: 'Horas executadas por colaborador',
+  adherence: 'Aderência por colaborador',
+  regular_days: 'Dias regulares',
+  incomplete_days: 'Dias incompletos',
+  missing_days: 'Dias sem lançamento',
+  excess_days: 'Dias excedentes',
+  team_ok: 'Colaboradores sem inconsistências',
+  team_review: 'Colaboradores que requerem revisão',
+  full_adherence: 'Colaboradores com aderência plena (100%)',
+  launch_coverage: 'Dias com lançamento registrado',
+  hours_gap: 'Déficit de horas por colaborador',
+}
 
 type ChartDetailModalProps = {
   selection: ChartSelection | null
@@ -41,8 +73,46 @@ function mandatoryDays(row: DashboardRow) {
   return row.days.filter((day) => Number(day.expected) > 0)
 }
 
+function daysAcrossTeam(
+  rows: DashboardRow[],
+  statuses: string[],
+): Array<DayResult & { collaboratorName?: string; collaboratorId?: number }> {
+  return rows.flatMap((row) =>
+    row.days
+      .filter((day) => statuses.includes(day.status) && Number(day.expected) > 0)
+      .map((day) => ({
+        ...day,
+        collaboratorName: row.collaborator.name,
+        collaboratorId: row.collaborator.id,
+      })),
+  )
+}
+
+function collaboratorLinkRow(
+  row: DashboardRow,
+  year: number,
+  month: number,
+  cells: ReactNode,
+) {
+  return (
+    <tr key={row.collaborator.id}>
+      <Td>
+        <Link
+          className="font-medium text-accent hover:underline"
+          to={`/colaboradores/${row.collaborator.id}?year=${year}&month=${month}`}
+        >
+          {row.collaborator.name}
+        </Link>
+      </Td>
+      {cells}
+    </tr>
+  )
+}
+
 function buildTitle(selection: ChartSelection, rows: DashboardRow[]): string {
   switch (selection.kind) {
+    case 'kpi':
+      return KPI_TITLE[selection.metric]
     case 'collaborator': {
       const row = findRow(rows, selection.collaboratorId)
       return row ? row.collaborator.name : 'Colaborador'
@@ -58,6 +128,8 @@ function buildTitle(selection: ChartSelection, rows: DashboardRow[]): string {
       return `Aderência em ${formatDate(selection.date)}`
     case 'day-compliance':
       return selection.category === 'regular' ? 'Dias regulares' : 'Dias com inconsistência'
+    default:
+      return 'Detalhe'
   }
 }
 
@@ -225,16 +297,238 @@ export function ChartDetailModal({ selection, rows, year, month, onClose }: Char
       selection.category === 'regular'
         ? ['regular']
         : ['missing', 'incomplete', 'excess']
-    const days = rows.flatMap((row) =>
-      row.days
-        .filter((day) => statuses.includes(day.status) && Number(day.expected) > 0)
-        .map((day) => ({
-          ...day,
-          collaboratorName: row.collaborator.name,
-          collaboratorId: row.collaborator.id,
-        })),
+    body = (
+      <DayTable days={daysAcrossTeam(rows, statuses)} year={year} month={month} showCollaborator rows={rows} />
     )
-    body = <DayTable days={days} year={year} month={month} showCollaborator rows={rows} />
+  }
+
+  if (selection.kind === 'kpi') {
+    const { metric } = selection
+    if (metric === 'collaborators') {
+      body = (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Colaborador</Th>
+              <Th className="text-right">Esperado</Th>
+              <Th className="text-right">Executado</Th>
+              <Th className="text-right">Aderência</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) =>
+              collaboratorLinkRow(
+                row,
+                year,
+                month,
+                <>
+                  <Td className="text-right">{formatHours(row.expected)}</Td>
+                  <Td className="text-right">{formatHours(row.executed)}</Td>
+                  <Td className="text-right">{formatPercent(row.adherence)}</Td>
+                </>,
+              ),
+            )}
+          </tbody>
+        </Table>
+      )
+    } else if (metric === 'expected_hours') {
+      body = (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Colaborador</Th>
+              <Th className="text-right">Horas esperadas</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) =>
+              collaboratorLinkRow(
+                row,
+                year,
+                month,
+                <Td className="text-right">{formatHours(row.expected)}</Td>,
+              ),
+            )}
+          </tbody>
+        </Table>
+      )
+    } else if (metric === 'executed_hours') {
+      body = (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Colaborador</Th>
+              <Th className="text-right">Horas executadas</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) =>
+              collaboratorLinkRow(
+                row,
+                year,
+                month,
+                <Td className="text-right">{formatHours(row.executed)}</Td>,
+              ),
+            )}
+          </tbody>
+        </Table>
+      )
+    } else if (metric === 'adherence') {
+      body = (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Colaborador</Th>
+              <Th className="text-right">Aderência</Th>
+              <Th className="text-right">Esperado</Th>
+              <Th className="text-right">Executado</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) =>
+              collaboratorLinkRow(
+                row,
+                year,
+                month,
+                <>
+                  <Td className="text-right font-medium">{formatPercent(row.adherence)}</Td>
+                  <Td className="text-right">{formatHours(row.expected)}</Td>
+                  <Td className="text-right">{formatHours(row.executed)}</Td>
+                </>,
+              ),
+            )}
+          </tbody>
+        </Table>
+      )
+    } else if (
+      metric === 'regular_days' ||
+      metric === 'incomplete_days' ||
+      metric === 'missing_days' ||
+      metric === 'excess_days'
+    ) {
+      const statusMap: Record<string, string> = {
+        regular_days: 'regular',
+        incomplete_days: 'incomplete',
+        missing_days: 'missing',
+        excess_days: 'excess',
+      }
+      body = (
+        <DayTable
+          days={daysAcrossTeam(rows, [statusMap[metric]])}
+          year={year}
+          month={month}
+          showCollaborator
+          rows={rows}
+        />
+      )
+    } else if (metric === 'team_ok' || metric === 'team_review') {
+      const filtered = rows.filter((row) => {
+        const ok = row.missing === 0 && row.incomplete === 0 && row.excess === 0
+        return metric === 'team_ok' ? ok : !ok
+      })
+      body = (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Colaborador</Th>
+              <Th className="text-right">Aderência</Th>
+              <Th className="text-right">Sem lançamento</Th>
+              <Th className="text-right">Incompleto</Th>
+              <Th className="text-right">Excedente</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((row) =>
+              collaboratorLinkRow(
+                row,
+                year,
+                month,
+                <>
+                  <Td className="text-right">{formatPercent(row.adherence)}</Td>
+                  <Td className="text-right">{row.missing}</Td>
+                  <Td className="text-right">{row.incomplete}</Td>
+                  <Td className="text-right">{row.excess}</Td>
+                </>,
+              ),
+            )}
+          </tbody>
+        </Table>
+      )
+    } else if (metric === 'full_adherence') {
+      const filtered = rows.filter((row) => Number(row.adherence) >= 100)
+      body = (
+        <Table>
+          <thead>
+            <tr>
+              <Th>Colaborador</Th>
+              <Th className="text-right">Aderência</Th>
+              <Th className="text-right">Executado</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((row) =>
+              collaboratorLinkRow(
+                row,
+                year,
+                month,
+                <>
+                  <Td className="text-right">{formatPercent(row.adherence)}</Td>
+                  <Td className="text-right">{formatHours(row.executed)}</Td>
+                </>,
+              ),
+            )}
+          </tbody>
+        </Table>
+      )
+    } else if (metric === 'launch_coverage') {
+      const days = rows.flatMap((row) =>
+        row.days
+          .filter((day) => Number(day.expected) > 0 && day.status !== 'missing')
+          .map((day) => ({
+            ...day,
+            collaboratorName: row.collaborator.name,
+            collaboratorId: row.collaborator.id,
+          })),
+      )
+      body = <DayTable days={days} year={year} month={month} showCollaborator rows={rows} />
+    } else if (metric === 'hours_gap') {
+      const withGap = rows
+        .map((row) => ({
+          row,
+          gap: Math.max(0, Number(row.expected) - Number(row.executed)),
+        }))
+        .filter((item) => item.gap > 0)
+        .sort((a, b) => b.gap - a.gap)
+      body =
+        withGap.length === 0 ? (
+          <p className="text-sm text-muted">Nenhum déficit de horas no período para os colaboradores listados.</p>
+        ) : (
+          <Table>
+            <thead>
+              <tr>
+                <Th>Colaborador</Th>
+                <Th className="text-right">Esperado</Th>
+                <Th className="text-right">Executado</Th>
+                <Th className="text-right">Déficit</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {withGap.map(({ row, gap }) =>
+                collaboratorLinkRow(
+                  row,
+                  year,
+                  month,
+                  <>
+                    <Td className="text-right">{formatHours(row.expected)}</Td>
+                    <Td className="text-right">{formatHours(row.executed)}</Td>
+                    <Td className="text-right font-medium">{formatHours(gap)}</Td>
+                  </>,
+                ),
+              )}
+            </tbody>
+          </Table>
+        )
+    }
   }
 
   return (
@@ -250,7 +544,7 @@ export function ChartDetailModal({ selection, rows, year, month, onClose }: Char
         <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
           <div>
             <h3 className="text-lg font-semibold">{title}</h3>
-            <p className="mt-1 text-sm text-muted">Clique fora ou em Fechar para voltar aos gráficos.</p>
+            <p className="mt-1 text-sm text-muted">Clique fora ou em Fechar para voltar ao painel.</p>
           </div>
           <Button type="button" variant="secondary" size="sm" onClick={onClose}>
             Fechar

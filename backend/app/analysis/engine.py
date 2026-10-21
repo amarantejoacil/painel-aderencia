@@ -133,6 +133,14 @@ def classify_status(expected: Decimal, executed: Decimal) -> str:
 def effective_task_hours(task: ActivityInput, daily_hours: Decimal) -> Decimal:
     if task.completed_hours is not None and task.completed_hours > 0:
         return q(task.completed_hours)
+    if task.completed_hours is not None and task.completed_hours == 0:
+        if is_azure_state_completed(task.state):
+            if task.estimated_hours is not None and task.estimated_hours > 0:
+                return q(task.estimated_hours)
+            return q(0)
+        if task.estimated_hours is not None and task.estimated_hours > 0:
+            return q(task.estimated_hours)
+        return q(0)
     if is_azure_state_completed(task.state):
         if task.estimated_hours is not None and task.estimated_hours > 0:
             return q(task.estimated_hours)

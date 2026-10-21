@@ -6,12 +6,13 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { GeminiSettingsSection } from '@/components/settings/GeminiSettingsSection'
+import { InconsistenciesReportSettingsSection } from '@/components/settings/InconsistenciesReportSettingsSection'
 import { ProjectTrackingScopesSection } from '@/components/settings/ProjectTrackingScopesSection'
 import { api, type AzureDevOpsSettings } from '@/lib/api'
 import { formatDate, formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
-type SettingsTab = 'azure' | 'projects' | 'ai'
+type SettingsTab = 'azure' | 'projects' | 'adherence' | 'ai'
 
 type FormState = {
   base_url: string
@@ -169,7 +170,7 @@ export function SettingsPage() {
       <div>
         <h2 className="text-2xl font-semibold">Configurações</h2>
         <p className="mt-1 text-sm text-muted">
-          Integrações do painel: Azure DevOps e inteligência artificial (Google Gemini).
+          Integrações, acompanhamento de projetos, relatório de aderência e inteligência artificial.
         </p>
       </div>
 
@@ -198,6 +199,16 @@ export function SettingsPage() {
           type="button"
           className={cn(
             'rounded-t-md px-4 py-2 text-sm font-medium',
+            activeTab === 'adherence' ? 'bg-paper text-accent shadow-sm' : 'text-muted hover:text-ink',
+          )}
+          onClick={() => setActiveTab('adherence')}
+        >
+          Aderência
+        </button>
+        <button
+          type="button"
+          className={cn(
+            'rounded-t-md px-4 py-2 text-sm font-medium',
             activeTab === 'ai' ? 'bg-paper text-accent shadow-sm' : 'text-muted hover:text-ink',
           )}
           onClick={() => setActiveTab('ai')}
@@ -207,6 +218,7 @@ export function SettingsPage() {
       </div>
 
       {activeTab === 'projects' ? <ProjectTrackingScopesSection /> : null}
+      {activeTab === 'adherence' ? <InconsistenciesReportSettingsSection /> : null}
       {activeTab === 'ai' ? <GeminiSettingsSection /> : null}
 
       {activeTab === 'azure' ? (

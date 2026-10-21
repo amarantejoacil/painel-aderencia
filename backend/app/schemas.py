@@ -224,6 +224,17 @@ class ProjectTrackingIgnoredScopesUpdate(BaseModel):
     ignored_scope_keys: list[str] = Field(default_factory=list, max_length=200)
 
 
+class InconsistenciesReportSettingsOut(BaseModel):
+    copy_intro_requires_review: str
+    copy_intro_ok: str
+    updated_at: datetime | None = None
+
+
+class InconsistenciesReportSettingsUpdate(BaseModel):
+    copy_intro_requires_review: str = Field(min_length=1, max_length=8000)
+    copy_intro_ok: str = Field(min_length=1, max_length=8000)
+
+
 class AiSettingsOut(BaseModel):
     provider: str
     provider_label: str
@@ -361,11 +372,35 @@ class MonthlyReportRowOut(BaseModel):
     open_tasks: list[ReportOpenTaskOut] = []
 
 
+class MonthScheduleCalendarOut(BaseModel):
+    id: int
+    date: date
+    type: str
+    description: str
+
+
+class MonthScheduleAbsenceOut(BaseModel):
+    id: int
+    collaborator_id: int
+    collaborator_name: str
+    type: str
+    start_date: date
+    end_date: date
+    note: str | None = None
+
+
+class MonthScheduleContextOut(BaseModel):
+    calendar_exceptions: list[MonthScheduleCalendarOut]
+    absences: list[MonthScheduleAbsenceOut]
+    summary: dict[str, int]
+
+
 class MonthlyReportOut(BaseModel):
     year: int
     month: int
     indicators: dict
     rows: list[MonthlyReportRowOut]
+    month_schedule: MonthScheduleContextOut
 
 
 class ProjectScopeOut(BaseModel):

@@ -28,3 +28,9 @@ def is_azure_state_completed(state: str | None) -> bool:
     if not state or not str(state).strip():
         return False
     return str(state).strip().lower() in COMPLETED_AZURE_STATES
+
+
+def is_azure_state_removed(state: str | None) -> bool:
+    if not state or not str(state).strip():
+        return False
+    return str(state).strip().lower() == "removed"

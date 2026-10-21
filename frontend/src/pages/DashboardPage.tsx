@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { ChartDetailModal, type ChartSelection } from '@/components/ChartDetailModal'
 import { DashboardCharts } from '@/components/DashboardCharts'
 import { PeriodObservationsModal } from '@/components/PeriodObservationsModal'
 import { Button } from '@/components/ui/button'
@@ -7,6 +8,7 @@ import { Card } from '@/components/ui/card'
 import { Table, Td, Th } from '@/components/ui/table'
 import { api, type Collaborator, type Dashboard } from '@/lib/api'
 import { currentYearMonth, formatHours, formatPercent, monthLabel, STATUS_LABEL } from '@/lib/format'
+import { cn } from '@/lib/utils'
 
 type StrategicIndicators = {
   teamComplianceRate: number
@@ -60,6 +62,7 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [observationsText, setObservationsText] = useState<string | null>(null)
   const [observationsLoading, setObservationsLoading] = useState(false)
+  const [detailSelection, setDetailSelection] = useState<ChartSelection | null>(null)
 
   const months = useMemo(
     () =>
@@ -152,6 +155,16 @@ export function DashboardPage() {
         />
       )}
 
+      {detailSelection && data && (
+        <ChartDetailModal
+          selection={detailSelection}
+          rows={data.rows}
+          year={year}
+          month={month}
+          onClose={() => setDetailSelection(null)}
+        />
+      )}
+
       <div className="grid gap-3 md:grid-cols-4">
         <label className="text-sm">
           <span className="mb-1 block text-muted">Mês</span>
@@ -224,42 +237,50 @@ export function DashboardPage() {
               title="Colaboradores analisados"
               value={String(indicators.collaborators)}
               description="Colaboradores ativos incluídos na análise do mês, respeitando data de entrada e saída."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'collaborators' })}
             />
             <Metric
               title="Horas esperadas"
               value={formatHours(indicators.expected_hours)}
               description="Soma da carga diária em todos os dias úteis obrigatórios da equipe no período."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'expected_hours' })}
             />
             <Metric
               title="Horas executadas"
               value={formatHours(indicators.executed_hours)}
               description="Total de horas lançadas nas Tasks importadas do Azure Boards."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'executed_hours' })}
             />
             <Metric
               title="Aderência de Horas"
               value={formatPercent(indicators.adherence)}
               description="Conformidade dos lançamentos com a carga esperada, limitada a 100%. Não mede produtividade."
               accent
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'adherence' })}
             />
             <Metric
               title="Dias regulares"
               value={String(indicators.regular)}
               description="Dias em que as horas executadas foram iguais à carga esperada."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'regular_days' })}
             />
             <Metric
               title="Dias incompletos"
               value={String(indicators.incomplete)}
               description="Dias com lançamento, porém com horas abaixo da carga esperada."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'incomplete_days' })}
             />
             <Metric
               title="Dias sem lançamento"
               value={String(indicators.missing)}
               description="Dias úteis obrigatórios sem nenhuma Task encontrada na importação."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'missing_days' })}
             />
             <Metric
               title="Dias excedentes"
               value={String(indicators.excess)}
               description="Dias com horas lançadas acima da carga esperada do colaborador."
+              onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'excess_days' })}
             />
           </div>
 
@@ -319,38 +340,45 @@ export function DashboardPage() {
                   value={formatPercent(strategic.teamComplianceRate)}
                   description={`${strategic.okCollaborators} de ${data.rows.length} colaborador(es) sem inconsistências (sem lançamento, incompleto ou excedente).`}
                   accent={strategic.teamComplianceRate >= 80}
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'team_ok' })}
                 />
                 <Metric
                   title="Requerem revisão"
                   value={String(strategic.needsReview)}
                   description="Colaboradores com ao menos uma inconsistência no mês analisado."
                   warn={strategic.needsReview > 0}
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'team_review' })}
                 />
                 <Metric
                   title="Aderência média individual"
                   value={formatPercent(strategic.avgAdherence)}
                   description="Média aritmética da aderência de cada colaborador no período."
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'adherence' })}
                 />
                 <Metric
                   title="Aderência plena"
                   value={String(strategic.fullAdherence)}
                   description={`Colaboradores com aderência de 100% entre ${data.rows.length} analisado(s).`}
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'full_adherence' })}
                 />
                 <Metric
                   title="Taxa de dias conformes"
                   value={formatPercent(strategic.compliantDayRate)}
                   description={`${indicators.regular} dia(s) regulares entre ${strategic.mandatoryDays} dia(s) úteis obrigatórios da equipe.`}
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'regular_days' })}
                 />
                 <Metric
                   title="Cobertura de lançamentos"
                   value={formatPercent(strategic.launchCoverage)}
                   description="Percentual de dias obrigatórios com ao menos uma Task registrada na importação."
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'launch_coverage' })}
                 />
                 <Metric
                   title="Déficit acumulado de horas"
                   value={formatHours(strategic.hoursGap)}
                   description="Diferença entre horas esperadas e executadas no período (não compensa entre dias)."
                   warn={strategic.hoursGap > 0}
+                  onOpen={() => setDetailSelection({ kind: 'kpi', metric: 'hours_gap' })}
                 />
               </div>
             </section>
@@ -369,22 +397,50 @@ function Metric({
   description,
   accent,
   warn,
+  onOpen,
 }: {
   title: string
   value: string
   description: string
   accent?: boolean
   warn?: boolean
+  onOpen?: () => void
 }) {
+  const interactive = Boolean(onOpen)
   return (
     <Card
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
       className={
-        accent ? 'bg-accent-soft' : warn ? 'border-amber-200 bg-amber-50/60' : undefined
+        interactive
+          ? cn(
+              'cursor-pointer transition-shadow hover:shadow-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+              accent ? 'bg-accent-soft' : warn ? 'border-amber-200 bg-amber-50/60' : undefined,
+            )
+          : accent
+            ? 'bg-accent-soft'
+            : warn
+              ? 'border-amber-200 bg-amber-50/60'
+              : undefined
+      }
+      onClick={onOpen}
+      onKeyDown={
+        onOpen
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onOpen()
+              }
+            }
+          : undefined
       }
     >
       <p className="text-xs uppercase tracking-wide text-muted">{title}</p>
       <p className="mt-2 text-2xl font-semibold">{value}</p>
       <p className="mt-2 text-xs leading-relaxed text-muted">{description}</p>
+      {interactive && (
+        <p className="mt-2 text-xs font-medium text-accent">Ver detalhes</p>
+      )}
     </Card>
   )
 }

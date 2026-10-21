@@ -57,6 +57,18 @@ def test_map_work_item_skips_without_work_date() -> None:
     assert reason == "Data de referência ausente ou inválida."
 
 
+def test_map_work_item_skips_removed_state() -> None:
+    item = _sample_item(state="Removed")
+    mapped, reason = map_work_item(
+        item,
+        work_date_field="Custom.DataReferencia",
+        activity_field="Custom.Atividade",
+    )
+    assert mapped is None
+    assert reason is not None
+    assert "Removed" in reason
+
+
 def test_map_work_item_reads_custom_atividade_when_microsoft_field_empty() -> None:
     item = _sample_item()
     item["fields"]["Microsoft.VSTS.Common.Activity"] = None

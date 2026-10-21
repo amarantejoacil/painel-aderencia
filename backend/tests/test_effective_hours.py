@@ -31,11 +31,45 @@ def test_closed_task_without_hours_uses_daily_load() -> None:
         title="Task",
         collaborator_id=1,
         work_date=date(2026, 9, 25),
-        completed_hours=Decimal("0"),
+        completed_hours=None,
         estimated_hours=None,
         state="Closed",
     )
     assert effective_task_hours(task, q(8)) == Decimal("8.00")
+
+
+def test_closed_tasks_with_explicit_zero_do_not_stack_daily_load() -> None:
+    tasks = [
+        ActivityInput(
+            task_id="4879",
+            title="[Teste] PDF",
+            collaborator_id=1,
+            work_date=date(2026, 10, 6),
+            completed_hours=Decimal("0"),
+            estimated_hours=Decimal("0"),
+            state="Closed",
+        ),
+        ActivityInput(
+            task_id="4880",
+            title="[Teste] PPT",
+            collaborator_id=1,
+            work_date=date(2026, 10, 6),
+            completed_hours=Decimal("0"),
+            estimated_hours=Decimal("0"),
+            state="Closed",
+        ),
+        ActivityInput(
+            task_id="4902",
+            title="Análise",
+            collaborator_id=1,
+            work_date=date(2026, 10, 6),
+            completed_hours=Decimal("5"),
+            estimated_hours=Decimal("5"),
+            state="Closed",
+        ),
+    ]
+    executed, _source = executed_for_day(tasks, q(8))
+    assert executed == Decimal("5.00")
 
 
 def test_open_status_tasks_count_as_presence_not_missing() -> None:

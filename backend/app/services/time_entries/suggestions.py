@@ -32,22 +32,27 @@ CATEGORIES = (
 
 STYLE_EXAMPLES = """
 Estes exemplos são modelos de redação, não atividades realizadas.
+Abra a DESCRIÇÃO com contexto genérico de gerência de projetos no NIA; depois detalhe as ações marcadas em texto corrido (sem checklist).
 
 Acompanhamento de projetos
 Título: Acompanhamento e monitoramento dos projetos do Núcleo de IA.
-Descrição: Acompanhamento das demandas e atividades dos projetos do Núcleo de Inteligência Artificial, incluindo verificação do andamento das entregas, alinhamento com a equipe técnica e identificação de pontos que necessitam de direcionamento.
+Descrição: Atuação no acompanhamento dos projetos do Núcleo de Inteligência Artificial (NIA), com foco na verificação do andamento das entregas, no alinhamento com a equipe técnica e na identificação de pontos que necessitam de direcionamento.
 
 Planejamento e backlog
 Título: Revisão e organização do backlog dos projetos.
-Descrição: Revisão das demandas registradas nos backlogs dos projetos, identificação de pendências, análise de prioridades e apoio à organização das próximas atividades de desenvolvimento.
+Descrição: Atuação na gestão do portfólio do NIA, com revisão das demandas registradas nos backlogs, identificação de pendências, análise de prioridades e apoio à organização das próximas atividades de desenvolvimento.
 
 Alinhamento com equipe
 Título: Alinhamento de demandas e acompanhamento das equipes.
-Descrição: Participação em alinhamentos com integrantes das equipes técnicas e de análise, visando acompanhar atividades em andamento, esclarecer dúvidas, organizar prioridades e apoiar a continuidade das entregas.
+Descrição: Atuação na interface entre gestão e execução no NIA, com participação em alinhamentos com equipes técnicas e de análise para acompanhar atividades em andamento, esclarecer dúvidas, organizar prioridades e apoiar a continuidade das entregas.
+
+Várias ações marcadas (modelo de texto corrido)
+Título: Acompanhamento de projetos, sprints e alinhamento com equipes do NIA.
+Descrição: Atuação no acompanhamento dos projetos do Núcleo de Inteligência Artificial (NIA), contemplando o monitoramento de sprints e a organização de backlog. Realização de reuniões com a equipe técnica e alinhamentos com analistas para acompanhar impedimentos, bem como comunicação e acompanhamento das entregas em andamento.
 
 Apoio à gestão estratégica
 Título: Apoio à gestão estratégica e acompanhamento das demandas do NIA.
-Descrição: Apoio ao acompanhamento das demandas institucionais do Núcleo de Inteligência Artificial, incluindo organização de informações, verificação de prioridades e suporte aos encaminhamentos necessários.
+Descrição: Atuação de apoio à gestão institucional do NIA, com organização de informações, verificação de prioridades das demandas e suporte aos encaminhamentos necessários à continuidade das iniciativas.
 """.strip()
 
 ROLE_CONTEXT = (
@@ -66,6 +71,11 @@ Não afirme participação em reunião se "Reuniões com equipe técnica" não e
 Os registros encontrados no Azure são contexto separado e não são o trabalho declarado.
 Não escreva checklist, instruções, meta-comentários nem texto em inglês.
 O título deve ser uma frase objetiva de trabalho realizado, nunca palavras como "empty", "yes" ou rótulos de campo.
+Na DESCRIÇÃO, comece com uma ou duas frases genéricas que situem o trabalho de gerência de projetos no Núcleo de
+Inteligência Artificial (NIA): portfólio de iniciativas, rotinas de gestão, interface com equipes técnicas e analistas.
+Em seguida, desenvolva em prosa corrida e conectada apenas as ações marcadas (use "contemplando", "incluindo",
+"bem como", "com foco em"), sem repetir rótulos de checkbox como lista.
+Prefira um parágrafo fluido; use segundo parágrafo só se o relato do usuário for longo.
 Se o usuário não detalhou atividades além das ações marcadas, deixe activities nulo.
 Se o usuário não informou resultado, deixe result nulo.
 Se o usuário não informou o tempo, deixe hours nulo. Não invente horas.
@@ -162,6 +172,7 @@ def build_suggestion_prompt(
         "Registros encontrados no Azure nesta data (não são o relato do usuário):\n"
         f"{found}\n\n"
         f"Tempo informado pelo usuário: {informed_hours}\n\n"
+        "Lembrete de redação: abra a DESCRIÇÃO com contexto genérico do NIA e integre as ações marcadas em texto corrido.\n\n"
         f"{STYLE_EXAMPLES}"
     )
 
@@ -329,24 +340,52 @@ def _fallback_title(categories: list[str]) -> str:
     return f"{head} e demais frentes de gestão do NIA"
 
 
+_CATEGORY_PROSE: dict[str, str] = {
+    "Acompanhamento dos projetos": "acompanhamento dos projetos e das entregas em andamento",
+    "Planejamento e priorização": "planejamento e priorização das demandas do portfólio",
+    "Monitoramento de sprints": "monitoramento de sprints",
+    "Organização de backlog": "organização de backlog",
+    "Alinhamento com analistas": "alinhamentos com analistas",
+    "Reuniões com equipe técnica": "reuniões com a equipe técnica",
+    "Apoio à gestão estratégica": "apoio à gestão estratégica do núcleo",
+    "Acompanhamento de impedimentos": "acompanhamento de impedimentos",
+    "Monitoramento de chamados e infraestrutura": "monitoramento de chamados e de infraestrutura",
+    "Elaboração de relatórios gerenciais": "elaboração de relatórios gerenciais",
+    "Atualização de cronogramas": "atualização de cronogramas",
+    "Comunicação e acompanhamento das entregas": "comunicação e acompanhamento das entregas",
+    "Organização de demandas institucionais": "organização de demandas institucionais",
+    "Apoio ao planejamento de novas iniciativas": "apoio ao planejamento de novas iniciativas",
+    "Acompanhamento de requisitos e validações": "acompanhamento de requisitos e validações",
+}
+
+
+def _join_prose_fragments(fragments: list[str]) -> str:
+    cleaned = [item for item in fragments if item]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    if len(cleaned) == 2:
+        return f"{cleaned[0]} e {cleaned[1]}"
+    return ", ".join(cleaned[:-1]) + f", bem como {cleaned[-1]}"
+
+
 def _fallback_description(
     categories: list[str],
     activities: str | None,
     result: str | None,
 ) -> str:
-    if activities:
-        return compose_description(
-            "Atividades de gerência de projetos do Núcleo de Inteligência Artificial.",
-            activities,
-            result,
-        )
-    if not categories:
-        return "Atividades de gerência de projetos do Núcleo de Inteligência Artificial."
-    listed = "\n".join(f"- {item}" for item in categories)
-    return (
-        "Atuação na gerência de projetos do Núcleo de Inteligência Artificial, contemplando:\n"
-        f"{listed}"
+    opening = (
+        "Atuação na gerência de projetos do Núcleo de Inteligência Artificial (NIA), "
+        "no acompanhamento do portfólio de iniciativas e das rotinas de gestão"
     )
+    if activities:
+        return compose_description(f"{opening}.", activities, result)
+    if not categories:
+        return f"{opening}."
+    fragments = [_CATEGORY_PROSE.get(item, item.casefold()) for item in categories]
+    detail = _join_prose_fragments(fragments)
+    return f"{opening}, contemplando {detail}."
 
 
 def _is_garbage_title(value: str) -> bool:

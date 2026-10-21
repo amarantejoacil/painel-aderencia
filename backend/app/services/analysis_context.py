@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.analysis.engine import AbsenceInput, ActivityInput, CollaboratorInput
 from app.models import Activity, CalendarException, Collaborator, CollaboratorAbsence, ImportBatch
 from app.services.azure_devops_config import get_ignored_assignees
+from app.services.azure_state_labels import is_azure_state_removed
 from app.services.csv_parser import normalize_name
 
 
@@ -39,6 +40,7 @@ def load_activity_inputs(db: Session) -> list[ActivityInput]:
             activity_category=row.activity_category,
         )
         for row in rows
+        if not is_azure_state_removed(row.state)
     ]
 
 

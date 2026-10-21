@@ -79,6 +79,11 @@ export function formatDate(value: string): string {
   return `${day}/${month}/${year}`
 }
 
+export function formatDateRange(start: string, end: string): string {
+  if (start === end) return formatDate(start)
+  return `${formatDate(start)} – ${formatDate(end)}`
+}
+
 /** Timestamps da API são UTC sem sufixo Z — normaliza antes de exibir no fuso local. */
 export function parseApiDateTime(value: string): Date {
   if (!value) return new Date(Number.NaN)

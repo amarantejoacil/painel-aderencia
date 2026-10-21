@@ -167,6 +167,12 @@ export type AiSettings = {
   last_test_message: string | null
 }
 
+export type InconsistenciesReportSettings = {
+  copy_intro_requires_review: string
+  copy_intro_ok: string
+  updated_at: string | null
+}
+
 export type AiModel = {
   id: string
   display_name: string | null
@@ -307,6 +313,39 @@ export type InconsistenciesReportRow = {
   open_tasks: ReportOpenTask[]
 }
 
+export type MonthScheduleCalendarItem = {
+  id: number
+  date: string
+  type: 'holiday' | 'optional_day' | 'work_release'
+  description: string
+}
+
+export type MonthScheduleAbsenceItem = {
+  id: number
+  collaborator_id: number
+  collaborator_name: string
+  type: string
+  start_date: string
+  end_date: string
+  note: string | null
+}
+
+export type MonthScheduleContext = {
+  calendar_exceptions: MonthScheduleCalendarItem[]
+  absences: MonthScheduleAbsenceItem[]
+  summary: {
+    calendar_exceptions: number
+    calendar_work_release: number
+    absences_total: number
+    medical_certificate: number
+    vacation: number
+    work_release: number
+    day_off: number
+    leave: number
+    other: number
+  }
+}
+
 export type InconsistenciesReport = {
   year: number
   month: number
@@ -320,6 +359,7 @@ export type InconsistenciesReport = {
     open_tasks: number
   }
   rows: InconsistenciesReportRow[]
+  month_schedule: MonthScheduleContext
 }
 
 export type ProjectScope = {
@@ -1075,6 +1115,16 @@ export const api = {
     request<ProjectTrackingScopeSettings>('/settings/project-tracking/ignored-scopes', {
       method: 'PUT',
       body: JSON.stringify({ ignored_scope_keys }),
+    }),
+  getInconsistenciesReportSettings: () =>
+    request<InconsistenciesReportSettings>('/settings/inconsistencies-report'),
+  updateInconsistenciesReportSettings: (payload: {
+    copy_intro_requires_review: string
+    copy_intro_ok: string
+  }) =>
+    request<InconsistenciesReportSettings>('/settings/inconsistencies-report', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
     }),
   getGeminiSettings: () => request<AiSettings>('/settings/gemini'),
   updateGeminiSettings: (payload: {

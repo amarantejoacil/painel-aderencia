@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from app.analysis.engine import (
+    STATUS_EXCESS,
     STATUS_INCOMPLETE,
     STATUS_MISSING,
     STATUS_REGULAR,
@@ -15,7 +16,7 @@ from app.services.azure_state_labels import is_azure_state_completed, translate_
 
 
 def verify_day_launch(day: DayResult, daily_hours: Decimal) -> dict | None:
-    if day.status not in {STATUS_MISSING, STATUS_INCOMPLETE}:
+    if day.status not in {STATUS_MISSING, STATUS_INCOMPLETE, STATUS_EXCESS}:
         return None
 
     if day.task_count == 0:
@@ -60,6 +61,17 @@ def verify_day_launch(day: DayResult, daily_hours: Decimal) -> dict | None:
         and (task.completed_hours is None or task.completed_hours == 0)
         for task in day.tasks
     )
+    if day.status == STATUS_EXCESS:
+        return {
+            "kind": "tasks_with_hour_excess",
+            "message": (
+                f"{day.task_count} Task(s) importada(s). A soma considerada pelo painel "
+                f"({day.executed}) supera o esperado ({day.expected}). "
+                "Compare as horas executadas de cada Task com o Azure DevOps."
+            ),
+            "tasks": tasks_detail,
+        }
+
     if all_closed_without_executed:
         return {
             "kind": "closed_tasks_without_executed_hours",

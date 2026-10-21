@@ -1,18 +1,32 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { Table, Td, Th } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { StatusBadge } from '@/components/StatusBadge'
-import { api, type DayResult, type InconsistenciesReport, type InconsistenciesReportRow } from '@/lib/api'
 import {
+  api,
+  type DayResult,
+  type InconsistenciesReport,
+  type InconsistenciesReportRow,
+  type MonthScheduleContext,
+} from '@/lib/api'
+import {
+  ABSENCE_TYPE_LABEL,
   currentYearMonth,
+  EXCEPTION_LABEL,
   formatAzureState,
   formatDate,
+  formatDateRange,
   formatDateWithWeekday,
   formatHours,
   dayStatusLabel,
   monthLabel,
 } from '@/lib/format'
+import {
+  buildCollaboratorIntro,
+  type InconsistenciesReportCopySettings,
+} from '@/lib/inconsistenciesReportCopy'
 import { cn } from '@/lib/utils'
 
 type SelectedIssue = {
@@ -58,6 +72,19 @@ export function InconsistenciesReportPage() {
   const [selected, setSelected] = useState<SelectedIssue | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [copySettings, setCopySettings] = useState<InconsistenciesReportCopySettings | null>(null)
+
+  useEffect(() => {
+    api
+      .getInconsistenciesReportSettings()
+      .then((settings) =>
+        setCopySettings({
+          copy_intro_requires_review: settings.copy_intro_requires_review,
+          copy_intro_ok: settings.copy_intro_ok,
+        }),
+      )
+      .catch(() => setCopySettings(null))
+  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -147,6 +174,10 @@ export function InconsistenciesReportPage() {
             />
           </div>
 
+          {data.month_schedule && (
+            <MonthSchedulePanel schedule={data.month_schedule} year={year} month={month} />
+          )}
+
           <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-6">
               {pendingRows.length > 0 && (
@@ -158,6 +189,7 @@ export function InconsistenciesReportPage() {
                       row={row}
                       year={year}
                       month={month}
+                      copySettings={copySettings}
                       selected={selected}
                       onSelect={setSelected}
                     />
@@ -174,6 +206,7 @@ export function InconsistenciesReportPage() {
                       row={row}
                       year={year}
                       month={month}
+                      copySettings={copySettings}
                       selected={selected}
                       onSelect={setSelected}
                     />
@@ -201,30 +234,96 @@ export function InconsistenciesReportPage() {
   )
 }
 
+function buildCollaboratorCardText(
+  row: InconsistenciesReportRow,
+  year: number,
+  month: number,
+  copySettings: InconsistenciesReportCopySettings | null,
+): string {
+  const isOk = row.situation === 'ok'
+  const lines = [
+    buildCollaboratorIntro(row, year, month, copySettings),
+    row.collaborator.name,
+    `Situação: ${isOk ? 'OK' : 'Requer revisão'}`,
+    `Período: ${periodShort(year, month)}`,
+    '',
+    row.summary_text,
+  ]
+  if (row.pending_days.length > 0) {
+    lines.push(
+      '',
+      `Inconsistências (${row.pending_days.length}):`,
+      ...row.pending_days.map((day) => `- ${issueLine(day)}`),
+    )
+  }
+  if (row.open_tasks.length > 0) {
+    lines.push(
+      '',
+      `Tasks não concluídas no Azure (${row.open_tasks.length}) — não impactam aderência de horas:`,
+      ...row.open_tasks.map(
+        (task) =>
+          `- #${task.task_id} — ${task.title} · ${formatDate(task.work_date)} · ${task.state_label}${
+            task.completed_hours != null ? ` · ${formatHours(task.completed_hours)}` : ''
+          }`,
+      ),
+    )
+  }
+  return lines.join('\n')
+}
+
 function CollaboratorBlock({
   row,
   year,
   month,
+  copySettings,
   selected,
   onSelect,
 }: {
   row: InconsistenciesReportRow
   year: number
   month: number
+  copySettings: InconsistenciesReportCopySettings | null
   selected: SelectedIssue | null
   onSelect: (value: SelectedIssue) => void
 }) {
   const isOk = row.situation === 'ok'
+  const [copied, setCopied] = useState(false)
+
+  const copyCardText = useCallback(async () => {
+    const text = buildCollaboratorCardText(row, year, month, copySettings)
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 2500)
+    } catch {
+      const area = document.createElement('textarea')
+      area.value = text
+      area.style.position = 'fixed'
+      area.style.left = '-9999px'
+      document.body.appendChild(area)
+      area.select()
+      try {
+        document.execCommand('copy')
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 2500)
+      } finally {
+        document.body.removeChild(area)
+      }
+    }
+  }, [row, year, month, copySettings])
 
   return (
     <Card className={cn(isOk ? 'border-emerald-200 bg-emerald-50/40' : 'border-amber-200 bg-amber-50/30')}>
-      <div className="flex items-start gap-2">
-        <span aria-hidden>{isOk ? '✅' : '⚠️'}</span>
-        <div className="min-w-0 flex-1">
-          <h4 className="font-semibold">{row.collaborator.name}</h4>
-          <p className="text-sm font-medium text-muted">
-            Situação: {isOk ? 'OK' : 'Requer revisão'}
-          </p>
+      <div className="flex items-start gap-3">
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <span aria-hidden className="mt-0.5 shrink-0">
+            {isOk ? '✅' : '⚠️'}
+          </span>
+          <div className="min-w-0 flex-1">
+            <h4 className="pr-2 font-semibold leading-snug">{row.collaborator.name}</h4>
+            <p className="text-sm font-medium text-muted">
+              Situação: {isOk ? 'OK' : 'Requer revisão'}
+            </p>
           <p className="mt-2 text-sm">{row.summary_text}</p>
 
           {!isOk && row.pending_days.length > 0 && (
@@ -285,15 +384,25 @@ function CollaboratorBlock({
             </div>
           )}
 
-          <div className="mt-3">
-            <Link
-              className="text-sm text-accent hover:underline"
-              to={`/colaboradores/${row.collaborator.id}?year=${year}&month=${month}`}
-            >
-              Ver detalhe completo
-            </Link>
+            <div className="mt-3">
+              <Link
+                className="text-sm text-accent hover:underline"
+                to={`/colaboradores/${row.collaborator.id}?year=${year}&month=${month}`}
+              >
+                Ver detalhe completo
+              </Link>
+            </div>
           </div>
         </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="shrink-0 border-accent/40 bg-white shadow-sm"
+          onClick={() => void copyCardText()}
+        >
+          {copied ? 'Copiado!' : 'Copiar texto'}
+        </Button>
       </div>
     </Card>
   )
@@ -318,7 +427,12 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
       <StatusBadge status={day.status} />
 
       {day.launch_verification && (
-        <div className="space-y-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div
+          className={cn(
+            'space-y-2 rounded-md px-3 py-2 text-sm',
+            day.status === 'excess' ? 'bg-sky-50 text-sky-950' : 'bg-amber-50 text-amber-900',
+          )}
+        >
           <p>{day.launch_verification.message}</p>
           {(day.launch_verification.tasks?.length ?? 0) > 0 && (
             <ul className="space-y-1 text-amber-950">
@@ -327,6 +441,9 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
                   #{task.task_id} — {task.title} · {task.state_label}
                   {task.completed_hours != null ? ` · executadas: ${formatHours(task.completed_hours)}` : ''}
                   {task.estimated_hours != null ? ` · estimadas: ${formatHours(task.estimated_hours)}` : ''}
+                  {'effective_hours' in task && task.effective_hours != null
+                    ? ` · contabilizadas: ${formatHours(task.effective_hours as number)}`
+                    : ''}
                 </li>
               ))}
             </ul>
@@ -383,6 +500,118 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
         )}
       </div>
     </div>
+  )
+}
+
+function MonthSchedulePanel({
+  schedule,
+  year,
+  month,
+}: {
+  schedule: MonthScheduleContext
+  year: number
+  month: number
+}) {
+  const { summary } = schedule
+  const chips = [
+    { label: 'Atestados (períodos)', value: summary.medical_certificate, highlight: summary.medical_certificate > 0 },
+    { label: 'Férias', value: summary.vacation },
+    { label: 'Liberação — colaborador', value: summary.work_release },
+    { label: 'Liberação — calendário (equipe)', value: summary.calendar_work_release },
+    { label: 'Folgas / licenças / outros', value: summary.day_off + summary.leave + summary.other },
+  ]
+
+  return (
+    <Card className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h3 className="text-lg font-semibold">Calendário e ausências — {periodShort(year, month)}</h3>
+          <p className="mt-1 text-sm text-muted">
+            Dias em que não se exige lançamento no Azure (feriado, liberação, atestado, etc.). Use para interpretar
+            inconsistências de “sem lançamento”.
+          </p>
+        </div>
+        <Link to="/calendario" className="text-sm text-accent hover:underline">
+          Gerenciar calendário →
+        </Link>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {chips.map((chip) => (
+          <span
+            key={chip.label}
+            className={cn(
+              'rounded-full border px-3 py-1 text-xs',
+              chip.highlight ? 'border-amber-300 bg-amber-50 text-amber-950' : 'border-line bg-paper text-muted',
+            )}
+          >
+            {chip.label}: <strong className="font-semibold text-ink">{chip.value}</strong>
+          </span>
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div>
+          <h4 className="text-sm font-semibold">Exceções de calendário do mês</h4>
+          <p className="text-xs text-muted">Feriados, pontos facultativos e liberações para toda a equipe.</p>
+          {schedule.calendar_exceptions.length === 0 ? (
+            <p className="mt-2 text-sm text-muted">Nenhuma exceção cadastrada neste mês.</p>
+          ) : (
+            <Table className="mt-2">
+              <thead>
+                <tr>
+                  <Th>Data</Th>
+                  <Th>Tipo</Th>
+                  <Th>Descrição</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.calendar_exceptions.map((row) => (
+                  <tr key={row.id}>
+                    <Td>{formatDateWithWeekday(row.date)}</Td>
+                    <Td>{EXCEPTION_LABEL[row.type] ?? row.type}</Td>
+                    <Td>{row.description}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+
+        <div>
+          <h4 className="text-sm font-semibold">Ausências e liberações por colaborador</h4>
+          <p className="text-xs text-muted">Períodos individuais (atestado, férias, liberação de expediente, etc.).</p>
+          {schedule.absences.length === 0 ? (
+            <p className="mt-2 text-sm text-muted">Nenhuma ausência cadastrada que caia neste mês.</p>
+          ) : (
+            <Table className="mt-2">
+              <thead>
+                <tr>
+                  <Th>Colaborador</Th>
+                  <Th>Período</Th>
+                  <Th>Tipo</Th>
+                  <Th>Observação</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.absences.map((row) => (
+                  <tr key={row.id}>
+                    <Td>
+                      <Link className="text-accent hover:underline" to={`/colaboradores/${row.collaborator_id}`}>
+                        {row.collaborator_name}
+                      </Link>
+                    </Td>
+                    <Td>{formatDateRange(row.start_date, row.end_date)}</Td>
+                    <Td>{ABSENCE_TYPE_LABEL[row.type] ?? row.type}</Td>
+                    <Td>{row.note || '—'}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          )}
+        </div>
+      </div>
+    </Card>
   )
 }
 

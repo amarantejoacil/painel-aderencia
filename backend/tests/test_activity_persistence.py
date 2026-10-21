@@ -91,6 +91,38 @@ def test_persist_azure_merge_counts_new_tasks_on_resync(client) -> None:
         db.close()
 
 
+def test_persist_azure_merge_drops_tasks_missing_from_resync(client) -> None:
+    db = TestingSession()
+    try:
+        day = date(2026, 10, 1)
+        incoming_first = [
+            _item("4861", day, title="Task A"),
+            _item("4864", day, title="Task excluída no Azure"),
+        ]
+        persist_azure_merge(db, year=2026, month=10, incoming=incoming_first)
+        incoming_resync = [_item("4861", day, title="Task A")]
+        persist_azure_merge(db, year=2026, month=10, incoming=incoming_resync)
+
+        latest = db.scalars(select(ImportBatch).order_by(ImportBatch.imported_at.desc())).first()
+        assert latest is not None
+        task_ids = set(
+            db.scalars(select(Activity.task_id).where(Activity.import_id == latest.id)).all()
+        )
+        october_ids = set(
+            db.scalars(
+                select(Activity.task_id).where(
+                    Activity.import_id == latest.id,
+                    Activity.work_date == day,
+                )
+            ).all()
+        )
+        assert "4864" not in october_ids
+        assert "4861" in october_ids
+        assert "4864" not in task_ids or "4864" not in october_ids
+    finally:
+        db.close()
+
+
 def test_persist_azure_merge_updates_existing_task_from_csv(client) -> None:
     db = TestingSession()
     try:

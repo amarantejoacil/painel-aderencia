@@ -13,9 +13,15 @@ from app.schemas import (
     AzureDevOpsSettingsOut,
     AzureDevOpsSettingsUpdate,
     AzureDevOpsTestOut,
+    InconsistenciesReportSettingsOut,
+    InconsistenciesReportSettingsUpdate,
     ProjectTrackingIgnoredScopesUpdate,
     ProjectTrackingScopeOptionOut,
     ProjectTrackingScopeSettingsOut,
+)
+from app.services.inconsistencies_report_settings import (
+    get_settings_view as get_inconsistencies_report_settings_view,
+    save_settings as save_inconsistencies_report_settings,
 )
 from app.services.ai.errors import (
     AiAuthError,
@@ -207,6 +213,36 @@ def _friendly_ai_error(exc: AiError) -> str:
     if isinstance(exc, AiConfigError):
         return str(exc)
     return "Falha de comunicação."
+
+
+@router.get("/inconsistencies-report", response_model=InconsistenciesReportSettingsOut)
+def get_inconsistencies_report_settings(db: Session = Depends(get_db)) -> InconsistenciesReportSettingsOut:
+    view = get_inconsistencies_report_settings_view(db)
+    return InconsistenciesReportSettingsOut(
+        copy_intro_requires_review=view.copy_intro_requires_review,
+        copy_intro_ok=view.copy_intro_ok,
+        updated_at=view.updated_at,
+    )
+
+
+@router.put("/inconsistencies-report", response_model=InconsistenciesReportSettingsOut)
+def update_inconsistencies_report_settings(
+    payload: InconsistenciesReportSettingsUpdate,
+    db: Session = Depends(get_db),
+) -> InconsistenciesReportSettingsOut:
+    try:
+        view = save_inconsistencies_report_settings(
+            db,
+            copy_intro_requires_review=payload.copy_intro_requires_review,
+            copy_intro_ok=payload.copy_intro_ok,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Não foi possível salvar a configuração.") from exc
+    return InconsistenciesReportSettingsOut(
+        copy_intro_requires_review=view.copy_intro_requires_review,
+        copy_intro_ok=view.copy_intro_ok,
+        updated_at=view.updated_at,
+    )
 
 
 @router.get("/gemini", response_model=AiSettingsOut)

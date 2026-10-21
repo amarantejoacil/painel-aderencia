@@ -62,6 +62,7 @@ def test_query_task_ids_uses_wiql(service: AzureDevOpsService) -> None:
     assert "Custom.DataReferencia" in body
     assert "2026-08-01" in body
     assert "2026-08-31" in body
+    assert "Removed" in body
 
 
 def test_test_connection_raises_auth_error(service: AzureDevOpsService) -> None:
