@@ -14,6 +14,9 @@ import { SprintAnalysisPrintPage } from '@/pages/projects/SprintAnalysisPrintPag
 import { SprintDetailPage } from '@/pages/projects/SprintDetailPage'
 import { SprintsPage } from '@/pages/projects/SprintsPage'
 import { SettingsPage } from '@/pages/SettingsPage'
+import { AuditHistoryPage } from '@/pages/audit/AuditHistoryPage'
+import { IssueAuditValidationPage } from '@/pages/audit/IssueAuditValidationPage'
+import { IssuesAuditPage } from '@/pages/audit/IssuesAuditPage'
 import { BatchPage } from '@/pages/timeEntries/BatchPage'
 import { HistoryPage } from '@/pages/timeEntries/HistoryPage'
 import { MyEntriesPage } from '@/pages/timeEntries/MyEntriesPage'
@@ -34,6 +37,10 @@ export default function App() {
           <Route path="apontamentos/lote" element={<BatchPage />} />
           <Route path="apontamentos/historico" element={<HistoryPage />} />
           <Route path="configuracoes" element={<SettingsPage />} />
+          <Route path="auditoria/issues" element={<IssuesAuditPage />} />
+          <Route path="auditoria/issues/:queryId" element={<IssuesAuditPage />} />
+          <Route path="auditoria/issues/:queryId/validacao" element={<IssueAuditValidationPage />} />
+          <Route path="auditoria/historico" element={<AuditHistoryPage />} />
           <Route path="projetos" element={<OverviewPage />} />
           <Route path="projetos/sprints" element={<SprintsPage />} />
           <Route path="projetos/sprints/analise/:reportId" element={<SprintAnalysisPage />} />

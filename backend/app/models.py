@@ -224,6 +224,45 @@ class TimeEntryOperation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
+class IssueAuditValidation(Base):
+    __tablename__ = "issue_audit_validations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    query_id: Mapped[int] = mapped_column(ForeignKey("issue_audit_queries.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class IssueAuditQuery(Base):
+    __tablename__ = "issue_audit_queries"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    requester: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    organization: Mapped[str] = mapped_column(String(200))
+    project: Mapped[str] = mapped_column(String(300))
+    work_item_type: Mapped[str] = mapped_column(String(100))
+    period_criterion: Mapped[str] = mapped_column(String(20))
+    year: Mapped[int] = mapped_column(Integer)
+    comment_scope: Mapped[str] = mapped_column(String(20))
+    person_name: Mapped[str] = mapped_column(String(300))
+    person_identity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    person_unique_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    issues_found: Mapped[int] = mapped_column(Integer, default=0)
+    issues_processed: Mapped[int] = mapped_column(Integer, default=0)
+    comments_analyzed: Mapped[int] = mapped_column(Integer, default=0)
+    comments_matched: Mapped[int] = mapped_column(Integer, default=0)
+    failure_count: Mapped[int] = mapped_column(Integer, default=0)
+    progress_percent: Mapped[int] = mapped_column(Integer, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    limitations: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    failed_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
 class AiUsageLog(Base):
     __tablename__ = "ai_usage_logs"
 

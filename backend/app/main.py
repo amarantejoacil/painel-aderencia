@@ -15,6 +15,7 @@ from app.routers import (
     dashboard,
     imports,
     inconsistencies_report,
+    issue_audit,
     project_tracking,
     time_entries,
     work_releases,
@@ -22,6 +23,7 @@ from app.routers import (
 from app.routers import settings as settings_router
 from app.services.azure_devops_config import backfill_projects_column, migrate_env_to_db_if_needed
 from app.services.credentials_security import log_startup_security_warnings, reduce_env_pat_exposure
+from app.services.issue_audit.jobs import fail_interrupted_audits
 from app.seed import seed_if_empty
 
 
@@ -36,6 +38,7 @@ async def lifespan(_app: FastAPI):
         backfill_projects_column(db)
         reduce_env_pat_exposure(db)
         log_startup_security_warnings(db)
+        fail_interrupted_audits(db)
     finally:
         db.close()
     yield
@@ -64,6 +67,7 @@ app.include_router(dashboard.router, prefix="/api")
 app.include_router(inconsistencies_report.router, prefix="/api")
 app.include_router(project_tracking.router, prefix="/api")
 app.include_router(time_entries.router, prefix="/api")
+app.include_router(issue_audit.router, prefix="/api")
 
 
 @app.get("/api/health")

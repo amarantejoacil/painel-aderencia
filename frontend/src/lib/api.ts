@@ -864,6 +864,141 @@ export type TimeEntryOperation = {
   submitted_at: string | null
 }
 
+export type IssueAuditSummary = {
+  id: number
+  created_at: string
+  finished_at: string | null
+  requester: string | null
+  organization: string
+  project: string
+  work_item_type: string
+  period_criterion: 'created' | 'changed'
+  year: number
+  comment_scope: 'all' | 'period'
+  person_name: string
+  person_identity_id: string | null
+  person_unique_name: string | null
+  status: 'queued' | 'running' | 'complete' | 'partial' | 'failed' | 'cancelled' | 'ambiguous'
+  issues_found: number
+  issues_processed: number
+  comments_analyzed: number
+  comments_matched: number
+  failure_count: number
+  progress_percent: number
+  error_message: string | null
+  limitations: string[]
+}
+
+export type IssueAuditComment = {
+  id: string
+  author: string
+  author_id: string | null
+  author_unique_name: string | null
+  created_at: string | null
+  created_at_local: string | null
+  text: string
+  is_deleted: boolean | null
+}
+
+export type IssueAuditIssue = {
+  id: number
+  title: string
+  state: string
+  assigned_to: string
+  url: string
+  comment_count: number | null
+  person_comment_count: number
+  person_commented: boolean
+  error: string | null
+  comments: IssueAuditComment[]
+}
+
+export type IssueAuditCandidate = {
+  id: string | null
+  display_name: string | null
+  unique_name: string | null
+  descriptor: string | null
+}
+
+export type IssueAuditDetail = IssueAuditSummary & {
+  failed_ids: number[]
+  result: {
+    issues: IssueAuditIssue[]
+    candidates: IssueAuditCandidate[]
+    issues_with_person: number
+    issues_without_person: number
+    ambiguous: boolean
+  } | null
+}
+
+export type IssueAuditPeople = {
+  status: 'matched' | 'ambiguous' | 'not_found' | 'unavailable'
+  people: IssueAuditCandidate[]
+  message: string | null
+}
+
+export type IssueAuditValidationRecord = {
+  id: number
+  query_id: number
+  created_at: string
+  updated_at: string | null
+  payload: {
+    validated_at: string
+    methodology: { limitation: string; risks: string[] }
+    coverage: {
+      consistent: boolean
+      wiql_count: number
+      stored_count: number
+      missing_count: number
+      extra_count: number
+      duplicate_stored_ids: number[]
+      wiql_limitation_notes: string[]
+    }
+    metrics: {
+      coverage_consistent: boolean
+      sample_size: number
+      sample_auto_confere: number
+      sample_auto_divergencia: number
+      sample_auto_nao_verificado: number
+      sample_divergence_rate: number | null
+      manual_confere: number
+      manual_divergencia: number
+      manual_nao_verificado: number
+      manual_divergence_rate: number | null
+      disclaimer: string
+    }
+    sample: {
+      issue_ids: number[]
+      items: Array<{
+        issue_id: number
+        url: string | null
+        title: string
+        auto_status: string
+        divergence: string | null
+        original: { comment_count: number | null; person_comment_count: number | null }
+        reextracted: { comment_count: number; person_comment_count: number } | null
+        comments_preview: Array<{
+          author: string
+          author_id: string | null
+          created_at_local: string | null
+          text_preview: string
+          matched_person: boolean
+        }>
+      }>
+    }
+    manual_reviews: Array<{
+      issue_id: number
+      status: 'confere' | 'divergencia' | 'nao_verificado'
+      real_comment_count: number | null
+      real_person_comment_count: number | null
+      divergence_type: string | null
+      notes: string | null
+      reviewed_by: string | null
+      reviewed_at: string
+    }>
+  }
+}
+
 export const api = {
   health: () => request<{ status: string }>('/health'),
   listCollaborators: () => request<Collaborator[]>('/collaborators'),
@@ -1169,4 +1304,76 @@ export const api = {
       `/projects/sprints/${encodeURIComponent(sprintKey)}${suffix}`,
     )
   },
+  auditProjects: (organization: string) =>
+    request<string[]>(`/audit/issues/projects?organization=${encodeURIComponent(organization)}`),
+  auditPeople: (organization: string, name: string) =>
+    request<IssueAuditPeople>(
+      `/audit/issues/people?organization=${encodeURIComponent(organization)}&name=${encodeURIComponent(name)}`,
+    ),
+  listIssueAudits: () => request<IssueAuditSummary[]>('/audit/issues/queries'),
+  createIssueAudit: (payload: {
+    organization: string
+    project: string
+    work_item_type: string
+    period_criterion: 'created' | 'changed'
+    year: number
+    comment_scope: 'all' | 'period'
+    person_name: string
+    person_identity_id?: string | null
+    person_unique_name?: string | null
+    requester?: string | null
+  }) => request<IssueAuditSummary>('/audit/issues/queries', { method: 'POST', body: JSON.stringify(payload) }),
+  getIssueAudit: (id: number) => request<IssueAuditDetail>(`/audit/issues/queries/${id}`),
+  cancelIssueAudit: (id: number) =>
+    request<IssueAuditSummary>(`/audit/issues/queries/${id}/cancel`, { method: 'POST' }),
+  retryIssueAudit: (id: number) =>
+    request<IssueAuditSummary>(`/audit/issues/queries/${id}/retry`, { method: 'POST' }),
+  backfillIssueAuditAllComments: (id: number) =>
+    request<IssueAuditSummary>(`/audit/issues/queries/${id}/backfill-all-comments`, {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true }),
+    }),
+  getIssueAuditExportReadiness: (id: number) =>
+    request<{
+      comments_analyzed: number
+      comments_stored_full: number
+      comments_stored_person: number
+      comments_matched: number
+      comments_storage_version: number
+      issues_incomplete: number
+      exportable_full: boolean
+      message: string | null
+      can_backfill: boolean
+      query_status: string
+    }>(`/audit/issues/queries/${id}/export-readiness`),
+  issueAuditExportUrl: (id: number, options?: { includeAllDiscussions?: boolean }) => {
+    const params = new URLSearchParams()
+    if (options?.includeAllDiscussions) params.set('include_all_discussions', 'true')
+    const query = params.toString()
+    return `/api/audit/issues/queries/${id}/export${query ? `?${query}` : ''}`
+  },
+  selectIssueAuditIdentity: (
+    id: number,
+    payload: { identity_id?: string | null; unique_name?: string | null; display_name?: string | null },
+  ) => request<IssueAuditDetail>(`/audit/issues/queries/${id}/identity`, { method: 'POST', body: JSON.stringify(payload) }),
+  getIssueAuditValidation: (id: number) =>
+    request<IssueAuditValidationRecord | null>(`/audit/issues/queries/${id}/validation`),
+  runIssueAuditValidation: (id: number) =>
+    request<IssueAuditValidationRecord>(`/audit/issues/queries/${id}/validate`, { method: 'POST' }),
+  saveIssueAuditManualReview: (
+    id: number,
+    payload: {
+      issue_id: number
+      status: 'confere' | 'divergencia' | 'nao_verificado'
+      real_comment_count?: number | null
+      real_person_comment_count?: number | null
+      divergence_type?: string | null
+      notes?: string | null
+      reviewer?: string | null
+    },
+  ) =>
+    request<IssueAuditValidationRecord>(`/audit/issues/queries/${id}/validation/manual`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
 }

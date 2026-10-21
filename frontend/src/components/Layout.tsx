@@ -9,7 +9,9 @@ import {
   LayoutDashboard,
   ListChecks,
   Menu,
+  ScrollText,
   Settings,
+  Shield,
   SquareKanban,
   TrendingUp,
   TriangleAlert,
@@ -52,6 +54,13 @@ const SECTIONS: Array<{ title: string; links: NavItem[] }> = [
       { to: '/apontamentos', label: 'Meus Apontamentos', icon: ClipboardList, end: true },
       { to: '/apontamentos/lote', label: 'Lançamento em Lote', icon: Layers },
       { to: '/apontamentos/historico', label: 'Histórico', icon: History },
+    ],
+  },
+  {
+    title: 'Auditoria Azure DevOps',
+    links: [
+      { to: '/auditoria/issues', label: 'Auditoria de Issues', icon: Shield },
+      { to: '/auditoria/historico', label: 'Histórico de Consultas', icon: ScrollText },
     ],
   },
   {
