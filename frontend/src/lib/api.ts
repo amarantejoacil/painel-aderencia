@@ -202,6 +202,7 @@ export type DayTask = {
   state: string | null
   project: string | null
   activity_category: string | null
+  azure_url?: string | null
 }
 
 export type DayLaunchVerification = {
@@ -214,6 +215,8 @@ export type DayLaunchVerification = {
     completed_hours?: number | string | null
     estimated_hours?: number | string | null
     effective_hours?: number | string | null
+    project?: string | null
+    azure_url?: string | null
   }>
 }
 
@@ -301,6 +304,7 @@ export type ReportOpenTask = {
   completed_hours: number | string | null
   activity_category?: string | null
   project?: string | null
+  azure_url?: string | null
 }
 
 export type InconsistenciesReportRow = {

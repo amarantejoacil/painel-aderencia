@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { Fragment, useEffect, useMemo, useState, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Table, Td, Th } from '@/components/ui/table'
 import { Button } from '@/components/ui/button'
@@ -36,6 +36,61 @@ type SelectedIssue = {
 
 function periodShort(year: number, month: number): string {
   return monthLabel(year, month).replace(' de ', '/')
+}
+
+type DayTaskLink = { task_id: string; azure_url?: string | null }
+
+function dayTaskLinks(day: DayResult): DayTaskLink[] {
+  const seen = new Set<string>()
+  const items: DayTaskLink[] = []
+  const push = (task_id: string, azure_url?: string | null) => {
+    if (!task_id || seen.has(task_id)) return
+    seen.add(task_id)
+    items.push({ task_id, azure_url })
+  }
+  for (const task of day.tasks) {
+    push(task.task_id, task.azure_url)
+  }
+  for (const task of day.launch_verification?.tasks ?? []) {
+    push(task.task_id, task.azure_url)
+  }
+  return items
+}
+
+function formatDayTaskLinks(day: DayResult): string {
+  const links = dayTaskLinks(day)
+  if (!links.length) return ''
+  return links
+    .map((item) => (item.azure_url ? `#${item.task_id} (${item.azure_url})` : `#${item.task_id}`))
+    .join(', ')
+}
+
+function DayTaskLinks({ day }: { day: DayResult }) {
+  const links = dayTaskLinks(day)
+  if (!links.length) return null
+  return (
+    <p className="mt-0.5 text-xs text-muted">
+      Azure:{' '}
+      {links.map((item, index) => (
+        <Fragment key={item.task_id}>
+          {index > 0 && ', '}
+          {item.azure_url ? (
+            <a
+              href={item.azure_url}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium text-accent hover:underline"
+              onClick={(event) => event.stopPropagation()}
+            >
+              #{item.task_id}
+            </a>
+          ) : (
+            <span className="font-medium text-ink">#{item.task_id}</span>
+          )}
+        </Fragment>
+      ))}
+    </p>
+  )
 }
 
 function issueLine(day: DayResult): string {
@@ -253,19 +308,22 @@ function buildCollaboratorCardText(
     lines.push(
       '',
       `Inconsistências (${row.pending_days.length}):`,
-      ...row.pending_days.map((day) => `- ${issueLine(day)}`),
+      ...row.pending_days.map((day) => {
+        const links = formatDayTaskLinks(day)
+        return `- ${issueLine(day)}${links ? ` | ${links}` : ''}`
+      }),
     )
   }
   if (row.open_tasks.length > 0) {
     lines.push(
       '',
       `Tasks não concluídas no Azure (${row.open_tasks.length}) — não impactam aderência de horas:`,
-      ...row.open_tasks.map(
-        (task) =>
-          `- #${task.task_id} — ${task.title} · ${formatDate(task.work_date)} · ${task.state_label}${
-            task.completed_hours != null ? ` · ${formatHours(task.completed_hours)}` : ''
-          }`,
-      ),
+      ...row.open_tasks.map((task) => {
+        const link = task.azure_url ? ` · ${task.azure_url}` : ''
+        return `- #${task.task_id} — ${task.title} · ${formatDate(task.work_date)} · ${task.state_label}${
+          task.completed_hours != null ? ` · ${formatHours(task.completed_hours)}` : ''
+        }${link}`
+      }),
     )
   }
   return lines.join('\n')
@@ -346,7 +404,8 @@ function CollaboratorBlock({
                         )}
                         onClick={() => onSelect({ row, day })}
                       >
-                        {issueLine(day)}
+                        <span className="block">{issueLine(day)}</span>
+                        <DayTaskLinks day={day} />
                       </button>
                     </li>
                   )
@@ -369,7 +428,19 @@ function CollaboratorBlock({
                     className="rounded-md border border-sky-200/80 bg-sky-50/50 px-2 py-1.5 text-sm"
                   >
                     <p className="font-medium">
-                      #{task.task_id} — {task.title}
+                      {task.azure_url ? (
+                        <a
+                          href={task.azure_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-accent hover:underline"
+                        >
+                          #{task.task_id}
+                        </a>
+                      ) : (
+                        <>#{task.task_id}</>
+                      )}{' '}
+                      — {task.title}
                     </p>
                     <p className="text-muted">
                       {formatDate(task.work_date)}
@@ -438,7 +509,19 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
             <ul className="space-y-1 text-amber-950">
               {day.launch_verification.tasks!.map((task) => (
                 <li key={task.task_id}>
-                  #{task.task_id} — {task.title} · {task.state_label}
+                  {task.azure_url ? (
+                    <a
+                      href={task.azure_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-accent hover:underline"
+                    >
+                      #{task.task_id}
+                    </a>
+                  ) : (
+                    <>#{task.task_id}</>
+                  )}{' '}
+                  — {task.title} · {task.state_label}
                   {task.completed_hours != null ? ` · executadas: ${formatHours(task.completed_hours)}` : ''}
                   {task.estimated_hours != null ? ` · estimadas: ${formatHours(task.estimated_hours)}` : ''}
                   {'effective_hours' in task && task.effective_hours != null
@@ -468,7 +551,19 @@ function IssueDetail({ selected, onClose }: { selected: SelectedIssue; onClose: 
             {day.tasks.map((task) => (
               <li key={task.task_id} className="rounded-md border border-line p-3">
                 <p className="font-medium">
-                  #{task.task_id} — {task.title}
+                  {task.azure_url ? (
+                    <a
+                      href={task.azure_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent hover:underline"
+                    >
+                      #{task.task_id}
+                    </a>
+                  ) : (
+                    <>#{task.task_id}</>
+                  )}{' '}
+                  — {task.title}
                 </p>
                 <p className="text-sm text-muted">
                   {task.activity_category ? `${task.activity_category} · ` : ''}

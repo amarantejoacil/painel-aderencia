@@ -8,6 +8,7 @@ from app.database import get_db
 from app.schemas import (
     CollaboratorOut,
     DayLaunchVerificationOut,
+    DayLaunchVerificationTaskOut,
     DayResultOut,
     DayTaskOut,
     MonthScheduleContextOut,
@@ -15,6 +16,8 @@ from app.schemas import (
     MonthlyReportRowOut,
     ReportOpenTaskOut,
 )
+from app.services.azure_devops_config import get_settings_row
+from app.services.azure_work_item_url import resolve_work_item_url
 from app.services.day_launch_verification import verify_day_launch
 from app.services.analysis_context import (
     load_activity_inputs,
@@ -28,11 +31,50 @@ from app.services.monthly_report import analyze_monthly_team
 router = APIRouter(prefix="/inconsistencies-report", tags=["inconsistencies-report"])
 
 
-def _day_out(day, daily_hours: Decimal) -> DayResultOut:
-    raw_verification = verify_day_launch(day, daily_hours)
-    verification = (
-        DayLaunchVerificationOut(**raw_verification) if raw_verification is not None else None
+def _azure_link_context(db: Session) -> tuple[str | None, str | None]:
+    row = get_settings_row(db)
+    if row is None:
+        return None, None
+    return (row.base_url or "").strip() or None, (row.organization or "").strip() or None
+
+
+def _task_url(
+    base_url: str | None,
+    organization: str | None,
+    project: str | None,
+    task_id: str,
+) -> str | None:
+    return resolve_work_item_url(
+        base_url=base_url,
+        organization=organization,
+        team_project=project,
+        task_id=task_id,
     )
+
+
+def _day_out(
+    day,
+    daily_hours: Decimal,
+    *,
+    base_url: str | None,
+    organization: str | None,
+) -> DayResultOut:
+    raw_verification = verify_day_launch(day, daily_hours)
+    verification = None
+    if raw_verification is not None:
+        verification_tasks = []
+        for task in raw_verification.get("tasks") or []:
+            verification_tasks.append(
+                DayLaunchVerificationTaskOut(
+                    **task,
+                    azure_url=_task_url(base_url, organization, task.get("project"), task["task_id"]),
+                )
+            )
+        verification = DayLaunchVerificationOut(
+            kind=raw_verification["kind"],
+            message=raw_verification["message"],
+            tasks=verification_tasks,
+        )
     return DayResultOut(
         date=day.date,
         expected=day.expected,
@@ -53,13 +95,19 @@ def _day_out(day, daily_hours: Decimal) -> DayResultOut:
                 state=task.state,
                 project=task.project,
                 activity_category=task.activity_category,
+                azure_url=_task_url(base_url, organization, task.project, task.task_id),
             )
             for task in day.tasks
         ],
     )
 
 
-def _row_out(item: dict) -> MonthlyReportRowOut:
+def _row_out(
+    item: dict,
+    *,
+    base_url: str | None,
+    organization: str | None,
+) -> MonthlyReportRowOut:
     summary = item["summary"]
     collaborator = summary.collaborator
     return MonthlyReportRowOut(
@@ -79,9 +127,21 @@ def _row_out(item: dict) -> MonthlyReportRowOut:
         excess=summary.excess,
         summary_text=item["summary_text"],
         pending_days=[
-            _day_out(day, summary.collaborator.daily_hours) for day in item["pending_days"]
+            _day_out(
+                day,
+                summary.collaborator.daily_hours,
+                base_url=base_url,
+                organization=organization,
+            )
+            for day in item["pending_days"]
         ],
-        open_tasks=[ReportOpenTaskOut(**task) for task in item.get("open_tasks", [])],
+        open_tasks=[
+            ReportOpenTaskOut(
+                **task,
+                azure_url=_task_url(base_url, organization, task.get("project"), task["task_id"]),
+            )
+            for task in item.get("open_tasks", [])
+        ],
     )
 
 
@@ -105,11 +165,12 @@ def get_inconsistencies_report(
         load_collaborator_absences(db),
     )
     schedule = build_month_schedule_context(db, year, month)
+    base_url, organization = _azure_link_context(db)
     return MonthlyReportOut(
         year=report["year"],
         month=report["month"],
         indicators=report["indicators"],
-        rows=[_row_out(item) for item in report["rows"]],
+        rows=[_row_out(item, base_url=base_url, organization=organization) for item in report["rows"]],
         month_schedule=MonthScheduleContextOut(**schedule),
     )
 

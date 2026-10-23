@@ -285,6 +285,7 @@ class DayTaskOut(BaseModel):
     state: str | None
     project: str | None
     activity_category: str | None = None
+    azure_url: str | None = None
 
 
 class DayLaunchVerificationTaskOut(BaseModel):
@@ -294,6 +295,8 @@ class DayLaunchVerificationTaskOut(BaseModel):
     completed_hours: Decimal | None = None
     estimated_hours: Decimal | None = None
     effective_hours: Decimal | None = None
+    project: str | None = None
+    azure_url: str | None = None
 
 
 class DayLaunchVerificationOut(BaseModel):
@@ -369,6 +372,7 @@ class ReportOpenTaskOut(BaseModel):
     completed_hours: Decimal | None = None
     activity_category: str | None = None
     project: str | None = None
+    azure_url: str | None = None
 
 
 class MonthlyReportRowOut(BaseModel):

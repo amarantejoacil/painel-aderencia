@@ -80,6 +80,7 @@ class DayResult:
     absence_type: str | None = None
     absence_note: str | None = None
     absence_excused_hours: Decimal | None = None
+    recognized: Decimal | None = None
 
 
 @dataclass
@@ -120,16 +121,42 @@ def expected_hours(
     return q(collaborator.daily_hours)
 
 
-def classify_status(expected: Decimal, executed: Decimal) -> str:
+def dedupe_tasks_for_day(tasks: list[ActivityInput]) -> list[ActivityInput]:
+    unique: dict[str, ActivityInput] = {}
+    for task in tasks:
+        unique[str(task.task_id)] = task
+    return list(unique.values())
+
+
+def logged_executed_for_day(tasks: list[ActivityInput]) -> Decimal:
+    total = Decimal("0")
+    for task in tasks:
+        if task.completed_hours is not None and task.completed_hours > 0:
+            total += q(task.completed_hours)
+    return q(total)
+
+
+def classify_day_status(expected: Decimal, recognized: Decimal, logged: Decimal) -> str:
     if expected == 0:
         return STATUS_NOT_REQUIRED
-    if executed == 0:
+    if recognized == 0:
         return STATUS_MISSING
-    if executed < expected:
-        return STATUS_INCOMPLETE
-    if executed > expected:
+    if logged > expected:
         return STATUS_EXCESS
+    if recognized < expected:
+        return STATUS_INCOMPLETE
     return STATUS_REGULAR
+
+
+def day_status_difference(status: str, expected: Decimal, recognized: Decimal, logged: Decimal) -> Decimal:
+    if status == STATUS_EXCESS:
+        return q(logged - expected)
+    return q(recognized - expected)
+
+
+def classify_status(expected: Decimal, executed: Decimal) -> str:
+    """Compatibilidade: trata `executed` como horas reconhecidas e logadas."""
+    return classify_day_status(expected, executed, executed)
 
 
 def effective_task_hours(task: ActivityInput, daily_hours: Decimal) -> Decimal:
@@ -183,6 +210,22 @@ def executed_for_day(
 
     # Tasks importadas no dia (ex.: Novo, Em andamento) contam como lançamento — presença.
     return q(daily_hours), HOURS_PRESENCE
+
+
+def _evaluate_day_hours(
+    day_tasks: list[ActivityInput],
+    daily_hours: Decimal,
+    expected: Decimal,
+) -> tuple[Decimal, Decimal, Decimal, str, str, Decimal]:
+    unique_tasks = dedupe_tasks_for_day(day_tasks)
+    recognized, source = executed_for_day(unique_tasks, daily_hours)
+    logged = logged_executed_for_day(unique_tasks)
+    status = classify_day_status(expected, recognized, logged)
+    difference = day_status_difference(status, expected, recognized, logged)
+    displayed = logged
+    if logged == 0 and source == HOURS_PRESENCE:
+        displayed = recognized
+    return logged, recognized, displayed, source, status, difference
 
 
 def adherence_hours(executed: Decimal, expected: Decimal) -> Decimal:
@@ -279,39 +322,48 @@ def analyze_collaborator(
                 counts[STATUS_JUSTIFIED_ABSENCE] += 1
                 continue
 
-            executed, source = executed_for_day(day_tasks, collaborator.daily_hours)
-            status = classify_status(adjusted_expected, executed)
+            unique_tasks = dedupe_tasks_for_day(day_tasks)
+            logged, recognized, displayed, source, status, difference = _evaluate_day_hours(
+                day_tasks,
+                collaborator.daily_hours,
+                adjusted_expected,
+            )
             result = DayResult(
                 date=day,
                 expected=adjusted_expected,
-                executed=executed,
-                difference=q(executed - adjusted_expected),
+                executed=displayed,
+                difference=difference,
                 status=status,
                 hours_source=source,
-                task_count=len(day_tasks),
-                tasks=_day_tasks_out(day_tasks),
+                task_count=len(unique_tasks),
+                tasks=_day_tasks_out(unique_tasks),
                 absence_type=absence.type,
                 absence_note=absence.note,
                 absence_excused_hours=excused,
+                recognized=recognized,
             )
             days.append(result)
             counts[status] += 1
             total_expected += adjusted_expected
-            total_executed += executed
-            capped += adherence_hours(executed, adjusted_expected)
+            total_executed += recognized
+            capped += adherence_hours(recognized, adjusted_expected)
             continue
 
         day_tasks = by_date.get(day, [])
-        executed, source = executed_for_day(day_tasks, collaborator.daily_hours)
-        status = classify_status(expected, executed)
+        unique_tasks = dedupe_tasks_for_day(day_tasks)
+        logged, recognized, displayed, source, status, difference = _evaluate_day_hours(
+            day_tasks,
+            collaborator.daily_hours,
+            expected,
+        )
         result = DayResult(
             date=day,
             expected=expected,
-            executed=executed,
-            difference=q(executed - expected),
+            executed=displayed,
+            difference=difference,
             status=status,
             hours_source=source,
-            task_count=len(day_tasks),
+            task_count=len(unique_tasks),
             tasks=[
                 DayTask(
                     task_id=task.task_id,
@@ -322,14 +374,15 @@ def analyze_collaborator(
                     activity_category=task.activity_category,
                     estimated_hours=q(task.estimated_hours) if task.estimated_hours is not None else None,
                 )
-                for task in sorted(day_tasks, key=lambda item: item.task_id)
+                for task in sorted(unique_tasks, key=lambda item: item.task_id)
             ],
+            recognized=recognized,
         )
         days.append(result)
         counts[status] += 1
         total_expected += expected
-        total_executed += executed
-        capped += adherence_hours(executed, expected)
+        total_executed += recognized
+        capped += adherence_hours(recognized, expected)
 
     if total_expected > 0:
         ratio = (capped / total_expected * Decimal("100")).quantize(QUANT, rounding=ROUND_HALF_UP)
@@ -384,13 +437,17 @@ def analyze_team(
     return eligible
 
 
+def _recognized_hours(day: DayResult) -> Decimal:
+    return q(day.recognized if day.recognized is not None else day.executed)
+
+
 def team_indicators(summaries: list[CollaboratorSummary]) -> dict:
     expected = q(sum((row.expected for row in summaries), Decimal("0")))
     executed = q(sum((row.executed for row in summaries), Decimal("0")))
     capped = Decimal("0")
     for row in summaries:
         for day in row.days:
-            capped += adherence_hours(day.executed, day.expected)
+            capped += adherence_hours(_recognized_hours(day), day.expected)
     if expected > 0:
         adherence = min((capped / expected * Decimal("100")).quantize(QUANT, rounding=ROUND_HALF_UP), q(100))
     else:
@@ -416,7 +473,7 @@ def team_daily_adherence(summaries: list[CollaboratorSummary]) -> list[dict]:
             expected, capped, count = totals.get(day.date, (Decimal("0"), Decimal("0"), 0))
             totals[day.date] = (
                 q(expected + day.expected),
-                q(capped + adherence_hours(day.executed, day.expected)),
+                q(capped + adherence_hours(_recognized_hours(day), day.expected)),
                 count + 1,
             )
 

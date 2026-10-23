@@ -13,7 +13,7 @@ COLLABORATORS = [
     ("Gleice Ferreira Marques", "Gleice Ferreira Marques", date(2026, 8, 3)),
     ("Joacil Amarante de Paula Junior", "JOACIL AMARANTE DE PAULA JUNIOR", date(2026, 8, 3)),
     ("Jonas Francisco Lima das Chagas", "Jonas Francisco Lima das Chagas", date(2026, 8, 12)),
-    ("Matheus Cruz Andrade", "Matheus Cruz Andrade", date(2026, 8, 3)),
+    ("Matheus Cruz Andrade", "Matheus Cruz Andrade", date(2026, 8, 3), date(2026, 10, 10)),
     ("Moisés Abinader Fiala", "Moisés Abinader Fiala", date(2026, 8, 12)),
     ("Nayan Pereira Couto Alves", "Nayan Pereira Couto Alves", date(2026, 8, 12)),
     ("Roni Andrei Wartha", "RONI ANDREI WARTHA", date(2026, 8, 3)),
@@ -28,15 +28,17 @@ EXCEPTIONS = [
 def seed_if_empty(db: Session) -> None:
     has_people = db.scalars(select(Collaborator.id)).first()
     if has_people is None:
-        for name, azure_name, start in COLLABORATORS:
+        for row in COLLABORATORS:
+            name, azure_name, start = row[0], row[1], row[2]
+            end = row[3] if len(row) > 3 else None
             db.add(
                 Collaborator(
                     name=name,
                     azure_name=azure_name,
                     start_date=start,
-                    end_date=None,
+                    end_date=end,
                     daily_hours=Decimal("8.00"),
-                    active=True,
+                    active=end is None,
                 )
             )
 

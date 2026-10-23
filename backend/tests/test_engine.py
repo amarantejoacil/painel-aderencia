@@ -62,6 +62,100 @@ def test_multiple_tasks_same_day_sum_to_regular() -> None:
     assert day.task_count == 2
 
 
+def test_excess_uses_logged_hours_not_estimates() -> None:
+    day = date(2026, 10, 7)
+    summary = analyze_collaborator(
+        person(id=12, name="Tayllisy"),
+        [
+            ActivityInput(
+                task_id="4876",
+                title="PDF",
+                collaborator_id=12,
+                work_date=day,
+                completed_hours=Decimal("1"),
+                estimated_hours=Decimal("1"),
+                state="Closed",
+            ),
+            ActivityInput(
+                task_id="4954",
+                title="Agentes",
+                collaborator_id=12,
+                work_date=day,
+                completed_hours=Decimal("0"),
+                estimated_hours=Decimal("2"),
+                state="Closed",
+            ),
+            ActivityInput(
+                task_id="4962",
+                title="NiaHub",
+                collaborator_id=12,
+                work_date=day,
+                completed_hours=Decimal("7"),
+                estimated_hours=Decimal("7"),
+                state="Closed",
+            ),
+        ],
+        set(),
+        2026,
+        10,
+        date(2026, 10, 23),
+    )
+    oct7 = next(item for item in summary.days if item.date == day)
+    assert oct7.executed == q(8)
+    assert oct7.status == STATUS_REGULAR
+    assert oct7.recognized == q(10)
+    assert summary.excess == 0
+
+
+def test_excess_scenarios_from_requirements() -> None:
+    day = date(2026, 10, 1)
+    base = dict(collaborator_id=1, work_date=day, state="Closed", title="Task")
+
+    est10_exec8 = analyze_collaborator(
+        person(),
+        [
+            ActivityInput(**base, task_id="a", completed_hours=Decimal("8"), estimated_hours=Decimal("10")),
+        ],
+        set(),
+        2026,
+        10,
+        date(2026, 10, 31),
+    )
+    assert next(d for d in est10_exec8.days if d.date == day).status == STATUS_REGULAR
+
+    est8_exec10 = analyze_collaborator(
+        person(),
+        [ActivityInput(**base, task_id="b", completed_hours=Decimal("10"), estimated_hours=Decimal("8"))],
+        set(),
+        2026,
+        10,
+        date(2026, 10, 31),
+    )
+    excess_day = next(d for d in est8_exec10.days if d.date == day)
+    assert excess_day.status == STATUS_EXCESS
+    assert excess_day.difference == q(2)
+
+    est16_exec0 = analyze_collaborator(
+        person(),
+        [ActivityInput(**base, task_id="c", completed_hours=Decimal("0"), estimated_hours=Decimal("16"))],
+        set(),
+        2026,
+        10,
+        date(2026, 10, 31),
+    )
+    assert next(d for d in est16_exec0.days if d.date == day).status != STATUS_EXCESS
+
+    est12_exec7 = analyze_collaborator(
+        person(),
+        [ActivityInput(**base, task_id="d", completed_hours=Decimal("7"), estimated_hours=Decimal("12"))],
+        set(),
+        2026,
+        10,
+        date(2026, 10, 31),
+    )
+    assert next(d for d in est12_exec7.days if d.date == day).status != STATUS_EXCESS
+
+
 def test_excess_does_not_cover_next_day() -> None:
     summary = analyze_collaborator(
         person(),
@@ -268,7 +362,7 @@ def test_vacation_period_reduces_expected_and_skips_inconsistencies() -> None:
 def test_work_release_absence_does_not_require_tasks() -> None:
     from app.analysis.engine import AbsenceInput
 
-    target = date(2026, 9, 12)
+    target = date(2026, 9, 11)  # sexta-feira útil
     absences = {target: AbsenceInput(type="work_release", note="Liberados pela chefia")}
     summary = analyze_collaborator(person(), [], set(), 2026, 9, date(2026, 9, 30), absences)
     day = next(item for item in summary.days if item.date == target)
@@ -327,7 +421,13 @@ def test_team_daily_adherence_aggregates_obligated_days() -> None:
         [person(id=1), person(id=2, name="Maria", azure_name="Maria")],
         [
             task(date(2026, 8, 4), Decimal("8"), "1"),
-            task(date(2026, 8, 4), Decimal("4"), "2"),
+            ActivityInput(
+                task_id="2",
+                title="Task 2",
+                collaborator_id=2,
+                work_date=date(2026, 8, 4),
+                completed_hours=Decimal("4"),
+            ),
         ],
         set(),
         2026,

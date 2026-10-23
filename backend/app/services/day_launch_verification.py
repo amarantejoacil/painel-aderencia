@@ -53,6 +53,7 @@ def verify_day_launch(day: DayResult, daily_hours: Decimal) -> dict | None:
                 "completed_hours": task.completed_hours,
                 "estimated_hours": task.estimated_hours,
                 "effective_hours": effective,
+                "project": task.project,
             }
         )
 
@@ -62,11 +63,15 @@ def verify_day_launch(day: DayResult, daily_hours: Decimal) -> dict | None:
         for task in day.tasks
     )
     if day.status == STATUS_EXCESS:
+        logged_total = sum(
+            (q(task.completed_hours) for task in day.tasks if task.completed_hours and task.completed_hours > 0),
+            q(0),
+        )
         return {
             "kind": "tasks_with_hour_excess",
             "message": (
-                f"{day.task_count} Task(s) importada(s). A soma considerada pelo painel "
-                f"({day.executed}) supera o esperado ({day.expected}). "
+                f"{day.task_count} Task(s) importada(s). A soma das horas executadas "
+                f"({logged_total}) supera o esperado ({day.expected}). "
                 "Compare as horas executadas de cada Task com o Azure DevOps."
             ),
             "tasks": tasks_detail,
@@ -82,11 +87,12 @@ def verify_day_launch(day: DayResult, daily_hours: Decimal) -> dict | None:
             "tasks": tasks_detail,
         }
 
+    recognized = day.recognized if day.recognized is not None else day.executed
     return {
         "kind": "tasks_with_hour_gap",
         "message": (
             f"{day.task_count} Task(s) importada(s), porém a soma de horas "
-            f"({day.executed}) ficou abaixo do esperado ({day.expected})."
+            f"({recognized}) ficou abaixo do esperado ({day.expected})."
         ),
         "tasks": tasks_detail,
     }

@@ -1,11 +1,20 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { ProjectPeriodFilters } from '@/pages/projects/ProjectPeriodFilters'
 import { ProjectModuleShell } from '@/pages/projects/ProjectModuleShell'
-import { api, type ProjectEvolution, type ProjectScope } from '@/lib/api'
-import { currentYearMonth, formatDate, formatPercent } from '@/lib/format'
+import { SprintAnalysisReportBody } from '@/pages/projects/sprintAnalysis/SprintAnalysisReportBody'
+import { SprintAnalysisProcessingState } from '@/pages/projects/sprintAnalysis/SprintAnalysisProcessingState'
+import {
+  api,
+  type ExecutiveReport,
+  type ProjectEvolution,
+  type ProjectScope,
+  type SprintAnalysis,
+} from '@/lib/api'
+import { buildBriefingPlainText, normalizeSprintAnalysisResult } from '@/lib/sprintAnalysisResult'
+import { currentYearMonth, formatDate, formatDateTime, formatPercent } from '@/lib/format'
 
 const STATUS_LABEL: Record<string, string> = {
   planned: 'Planejada',
@@ -73,6 +82,14 @@ export function EvolutionPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [aiReport, setAiReport] = useState<ExecutiveReport | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [savedLoading, setSavedLoading] = useState(false)
+  const [geminiReady, setGeminiReady] = useState<boolean | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [showAiResult, setShowAiResult] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const lookupTicket = useRef(0)
 
   const activeScope = useMemo(
     () => scopes.find((item) => item.key === scopeKey && item.area_path),
@@ -85,6 +102,15 @@ export function EvolutionPage() {
       .listProjectScopes()
       .then(setScopes)
       .catch((err: Error) => setError(err.message))
+  }, [])
+
+  useEffect(() => {
+    api
+      .getGeminiSettings()
+      .then((settings) =>
+        setGeminiReady(Boolean(settings.enabled && settings.api_key_configured && settings.model_id)),
+      )
+      .catch(() => setGeminiReady(false))
   }, [])
 
   useEffect(() => {
@@ -114,6 +140,105 @@ export function EvolutionPage() {
       .finally(() => setLoading(false))
   }, [year, month, scopeKey, canLoad, activeScope, setSearchParams])
 
+  useEffect(() => {
+    if (!canLoad) {
+      setAiReport(null)
+      setShowAiResult(false)
+      setSavedLoading(false)
+      return
+    }
+    let cancelled = false
+    const ticket = ++lookupTicket.current
+    setSavedLoading(true)
+    setAiError(null)
+    api
+      .latestExecutiveReport({
+        report_type: 'evolution',
+        year,
+        month,
+        scope_key: scopeKey,
+      })
+      .then((payload) => {
+        if (cancelled || ticket !== lookupTicket.current) return
+        if (payload.report) {
+          setAiReport(payload.report)
+          setShowAiResult(true)
+        } else {
+          setAiReport(null)
+          setShowAiResult(false)
+        }
+      })
+      .catch((err: Error) => {
+        if (!cancelled && ticket === lookupTicket.current) setAiError(err.message)
+      })
+      .finally(() => {
+        if (!cancelled && ticket === lookupTicket.current) setSavedLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [canLoad, year, month, scopeKey])
+
+  const generateWithAi = useCallback(() => {
+    if (!canLoad || !geminiReady) return
+    lookupTicket.current += 1
+    setAiLoading(true)
+    setAiError(null)
+    setShowAiResult(true)
+    api
+      .createExecutiveReport({
+        report_type: 'evolution',
+        year,
+        month,
+        scope_key: scopeKey,
+      })
+      .then(setAiReport)
+      .catch((err: Error) => setAiError(err.message))
+      .finally(() => setAiLoading(false))
+  }, [canLoad, geminiReady, year, month, scopeKey])
+
+  useEffect(() => {
+    if (!aiReport || (aiReport.status !== 'pending' && aiReport.status !== 'running')) return
+    let cancelled = false
+    const timer = window.setTimeout(() => {
+      api
+        .getExecutiveReport(aiReport.id)
+        .then((payload) => {
+          if (!cancelled) setAiReport(payload)
+        })
+        .catch((err: Error) => {
+          if (!cancelled) setAiError(err.message)
+        })
+    }, 2500)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [aiReport])
+
+  const aiBusy =
+    aiLoading || aiReport?.status === 'pending' || aiReport?.status === 'running'
+  const analysisView: SprintAnalysis | null =
+    aiReport && aiReport.status === 'success' && aiReport.pack
+      ? { ...aiReport, scope_key: aiReport.scope_key ?? '' }
+      : null
+  const referenceAt = aiReport?.pack?.analysis_at
+
+  const copyAiSummary = async () => {
+    if (!aiReport?.result || !aiReport.pack) return
+    const normalized = normalizeSprintAnalysisResult(aiReport.result, aiReport.pack)
+    if (!normalized) return
+    const sprintNames = (aiReport.pack.sprints ?? []).map((sprint) => sprint.name)
+    const text = buildBriefingPlainText(normalized, {
+      scopeLabel: aiReport.scope_label,
+      sprintNames,
+      generatedAt: aiReport.generated_at ? formatDateTime(aiReport.generated_at) : null,
+    })
+    await navigator.clipboard.writeText(text)
+    setCopied(true)
+    window.setTimeout(() => setCopied(false), 2000)
+  }
+
   return (
     <ProjectModuleShell
       title="Evolução dos Projetos"
@@ -133,14 +258,78 @@ export function EvolutionPage() {
         scopePlaceholder="Selecione o projeto e a área"
       />
 
+      {geminiReady === false ? (
+        <Card className="border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <p>
+            Configure o Gemini em Administração (chave, modelo e IA ativada) para gerar o resumo automático
+            da evolução.
+          </p>
+          <Link to="/configuracoes" className="mt-2 inline-block font-medium underline">
+            Abrir Configurações
+          </Link>
+        </Card>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" variant="secondary" disabled title="Disponível na etapa de IA">
-          Gerar resumo com IA
+        <Button
+          type="button"
+          disabled={!canLoad || !geminiReady || aiBusy || loading || savedLoading}
+          onClick={() => generateWithAi()}
+        >
+          {aiBusy
+            ? 'Gerando com IA…'
+            : savedLoading
+              ? 'Consultando…'
+              : aiReport
+                ? 'Gerar resumo novamente'
+                : 'Gerar resumo com IA'}
         </Button>
-        <p className="text-sm text-muted">
-          Resumo automático será habilitado quando a integração de IA estiver configurada.
-        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!analysisView}
+          onClick={() => void copyAiSummary()}
+        >
+          {copied ? 'Copiado' : 'Copiar resumo'}
+        </Button>
+        {canLoad && geminiReady ? (
+          <p className="text-sm text-muted">
+            Usa as Sprints do período filtrado e o mesmo modelo dos Relatórios Inteligentes.
+          </p>
+        ) : !canLoad ? (
+          <p className="text-sm text-muted">Selecione projeto e área para habilitar o resumo com IA.</p>
+        ) : null}
       </div>
+
+      {aiError ? (
+        <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-900">{aiError}</Card>
+      ) : null}
+
+      {showAiResult && aiBusy ? (
+        <SprintAnalysisProcessingState
+          status={aiReport?.status === 'pending' ? 'pending' : aiLoading && !aiReport ? 'loading' : 'running'}
+        />
+      ) : null}
+
+      {showAiResult && aiReport?.status === 'error' ? (
+        <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-900">
+          {aiReport.error_message || 'Não foi possível gerar o resumo com IA.'}
+        </Card>
+      ) : null}
+
+      {showAiResult && analysisView ? (
+        <div className="space-y-4">
+          <p className="text-sm text-muted">
+            {analysisView.generated_at
+              ? `Resumo salvo em ${formatDateTime(analysisView.generated_at)}.`
+              : 'Resumo salvo.'}{' '}
+            {analysisView.model ? `Modelo ${analysisView.model}. ` : ''}
+            Fonte: Azure DevOps.
+            {referenceAt ? ` Dados de referência em ${formatDateTime(referenceAt)}.` : ''}
+          </p>
+          <SprintAnalysisReportBody data={analysisView} viewMode="executive" />
+        </div>
+      ) : null}
 
       {error ? (
         <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-900">{error}</Card>

@@ -325,7 +325,7 @@ def _conference_day(day: DayResult, daily_hours: Decimal, urls: dict[str, str]) 
     ]
     estimated = q(sum((task.estimated_hours for task in tasks), Decimal("0")))
     executed = q(sum((task.executed_hours for task in tasks), Decimal("0")))
-    recognized = q(day.executed)
+    recognized = q(day.recognized if day.recognized is not None else day.executed)
     missing = q(max(Decimal("0"), q(day.expected) - recognized))
     source = describe_source(day)
     pending = day.status in PENDING_STATUSES
