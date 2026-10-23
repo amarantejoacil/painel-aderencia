@@ -165,6 +165,26 @@ def test_future_days_not_required() -> None:
     assert next(item for item in summary.days if item.date == date(2026, 8, 5)).status == STATUS_MISSING
 
 
+def test_partial_medical_absence_reduces_expected_hours() -> None:
+    from decimal import Decimal
+
+    target = date(2026, 10, 15)
+    absences = {
+        target: AbsenceInput(
+            type="medical_certificate",
+            note="Tarde abonada",
+            excused_hours=Decimal("4"),
+        )
+    }
+    summary = analyze_collaborator(person(), [], set(), 2026, 10, date(2026, 10, 31), absences)
+    day = next(item for item in summary.days if item.date == target)
+    assert day.expected == Decimal("4.00")
+    assert day.absence_excused_hours == Decimal("4.00")
+    assert day.status == "missing"
+    assert day.absence_type == "medical_certificate"
+    assert summary.justified_absence == 0
+
+
 def test_justified_absence_removes_missing_and_expected_hours() -> None:
     target = date(2026, 8, 20)
     absences = {target: AbsenceInput(type="medical_certificate", note="Atestado")}

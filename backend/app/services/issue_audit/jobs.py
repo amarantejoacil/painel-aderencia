@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -13,7 +13,8 @@ from app.services.azure_devops_config import get_settings_row, resolve_pat
 from app.services.azure_devops_errors import AzureDevOpsAuthError, AzureDevOpsConfigError, AzureDevOpsError
 from app.services.issue_audit.client import AzureCollectionClient
 from app.services.issue_audit.matching import PersonTarget, normalize_name
-from app.services.issue_audit.runner import apply_identity, execute_audit
+from app.services.issue_audit.profiles import resolve_audit_profile
+from app.services.issue_audit.runner import apply_comment_scope, apply_identity, collect_comments, execute_audit
 
 _cancel_events: dict[int, threading.Event] = {}
 _guard = threading.Lock()
@@ -44,6 +45,10 @@ def create_query(
     person_name: str,
     person_identity_id: str | None,
     person_unique_name: str | None,
+    profile_id: str | None = None,
+    state_filter: str | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
 ) -> IssueAuditQuery:
     row = IssueAuditQuery(
         created_at=_now(),
@@ -57,6 +62,10 @@ def create_query(
         person_name=person_name.strip(),
         person_identity_id=(person_identity_id or "").strip() or None,
         person_unique_name=(person_unique_name or "").strip() or None,
+        profile_id=(profile_id or "").strip() or None,
+        state_filter=(state_filter or "").strip() or None,
+        period_start=period_start,
+        period_end=period_end,
         status="queued",
         issues_found=0,
         issues_processed=0,
@@ -240,6 +249,8 @@ def _run(
                 should_cancel=cancel_event.is_set,
                 on_progress=on_progress,
             )
+            if person.locked:
+                updated = apply_identity(updated, person)
             current = db.get(IssueAuditQuery, query_id)
             if current is None:
                 return
@@ -255,6 +266,7 @@ def _run(
         if retry_ids:
             result = _retry(client, row, person, retry_ids, on_progress, cancel_event.is_set)
         else:
+            profile = resolve_audit_profile(row.profile_id, row.organization, row.project)
             client.ensure_project(row.project)
             result = execute_audit(
                 client,
@@ -266,6 +278,12 @@ def _run(
                 person=person,
                 on_progress=on_progress,
                 should_cancel=cancel_event.is_set,
+                comment_strategy=profile.comment_strategy,
+                planning_fields=profile.planning_fields,
+                profile_id=profile.id or None,
+                period_start=row.period_start,
+                period_end=row.period_end,
+                state=row.state_filter,
             )
         _store_result(db, query_id, result)
     except AzureDevOpsAuthError as exc:
@@ -289,15 +307,18 @@ def _backfill_all_comments(
     should_cancel,
     on_progress,
 ) -> dict[str, Any]:
-    from app.services.issue_audit.matching import comment_from_update, in_selected_year
-
     previous = dict(row.result or {})
+    strategy = _comment_strategy(row)
     issues = [dict(issue) for issue in previous.get("issues") or []]
     limitations = list(previous.get("limitations") or [])
     total_built = 0
     processable = [issue for issue in issues if not issue.get("error")]
     found = len(processable)
     processed = 0
+    ui_counts: dict[int, int | None] = {}
+    if strategy == "history":
+        ui_counts = client.fetch_ui_comment_counts([int(issue["id"]) for issue in processable])
+    ui_mismatches: list[tuple[int, int, int]] = []
     for issue in issues:
         if should_cancel():
             limitations.append("Reprocessamento de comentários cancelado antes de terminar.")
@@ -306,19 +327,30 @@ def _backfill_all_comments(
             continue
         issue_id = int(issue["id"])
         try:
-            updates = client.fetch_comment_updates(issue_id)
+            comments = collect_comments(
+                client,
+                project=row.project,
+                work_item_id=issue_id,
+                strategy=strategy,
+            )
         except AzureDevOpsAuthError:
             raise
         except AzureDevOpsError as exc:
             limitations.append(f"Issue {issue_id}: comentários completos indisponíveis ({exc}).")
             issue["all_comments"] = list(issue.get("all_comments") or [])
         else:
-            comments = [comment for update in updates if (comment := comment_from_update(update))]
-            if row.comment_scope == "period":
-                comments = [comment for comment in comments if in_selected_year(comment, row.year)]
-            comments.sort(key=lambda comment: comment.get("created_at") or "")
+            comments = apply_comment_scope(
+                comments,
+                comment_scope=row.comment_scope,
+                year=row.year,
+                period_start=row.period_start,
+                period_end=row.period_end,
+            )
             issue["all_comments"] = comments
             total_built += len(comments)
+            ui_count = ui_counts.get(issue_id)
+            if ui_count is not None and ui_count > len(comments):
+                ui_mismatches.append((issue_id, ui_count, len(comments)))
         processed += 1
         if on_progress:
             on_progress(found, processed, int(previous.get("comments_analyzed") or 0), int(previous.get("failure_count") or 0))
@@ -327,18 +359,32 @@ def _backfill_all_comments(
         limitations.append(
             f"Reprocessamento de comentários: {total_built} reconstruídos vs {expected} analisados na consulta original."
         )
+    if ui_mismatches:
+        sample = ", ".join(f"#{wid} (UI {ui}, histórico {hist})" for wid, ui, hist in ui_mismatches[:5])
+        extra = f" e mais {len(ui_mismatches) - 5}" if len(ui_mismatches) > 5 else ""
+        limitations.append(
+            f"Em {len(ui_mismatches)} Issue(s), System.CommentCount da UI do Azure excede os comentários "
+            f"recuperados pelo histórico — {sample}{extra}. A exportação completa reflete apenas o histórico disponível."
+        )
     previous["issues"] = issues
     previous["comments_storage_version"] = 1
     previous["limitations"] = limitations
     return previous
 
 
+def _comment_strategy(row: IssueAuditQuery) -> str:
+    stored = str((row.result or {}).get("comment_source") or "")
+    if stored in {"history", "comments_api"}:
+        return stored
+    return resolve_audit_profile(row.profile_id, row.organization, row.project).comment_strategy
+
+
 def _retry(client, row: IssueAuditQuery, person: PersonTarget, retry_ids: list[int], on_progress, should_cancel) -> dict[str, Any]:
-    from app.services.issue_audit.matching import comment_from_update, in_selected_year
     from app.services.issue_audit.runner import _issue_from_work_item, _payload
 
     retry_set = {int(item_id) for item_id in retry_ids}
     previous = dict(row.result or {})
+    strategy = _comment_strategy(row)
     kept = [issue for issue in previous.get("issues") or [] if int(issue.get("id") or 0) not in retry_set]
     field_refs = previous.get("work_item_field_refs")
     field_mapping = previous.get("work_item_field_mapping") or {}
@@ -383,7 +429,12 @@ def _retry(client, row: IssueAuditQuery, person: PersonTarget, retry_ids: list[i
             )
         else:
             try:
-                updates = client.fetch_comment_updates(item_id)
+                comments = collect_comments(
+                    client,
+                    project=row.project,
+                    work_item_id=item_id,
+                    strategy=strategy,
+                )
             except AzureDevOpsAuthError:
                 raise
             except AzureDevOpsError as exc:
@@ -393,10 +444,13 @@ def _retry(client, row: IssueAuditQuery, person: PersonTarget, retry_ids: list[i
                     )
                 )
             else:
-                comments = [comment for update in updates if (comment := comment_from_update(update))]
-                if row.comment_scope == "period":
-                    comments = [comment for comment in comments if in_selected_year(comment, row.year)]
-                comments.sort(key=lambda comment: comment.get("created_at") or "")
+                comments = apply_comment_scope(
+                    comments,
+                    comment_scope=row.comment_scope,
+                    year=row.year,
+                    period_start=row.period_start,
+                    period_end=row.period_end,
+                )
                 analyzed += len(comments)
                 fresh.append(
                     _issue_from_work_item(client, row.project, item, comments, field_mapping=field_mapping)
@@ -441,6 +495,8 @@ def _retry(client, row: IssueAuditQuery, person: PersonTarget, retry_ids: list[i
         candidates=candidates if ambiguous else [],
         work_item_field_refs=previous.get("work_item_field_refs"),
         work_item_field_mapping=previous.get("work_item_field_mapping"),
+        profile_id=previous.get("profile_id") or row.profile_id,
+        comment_source=strategy,
     )
 
 

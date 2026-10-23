@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import html
 import re
-from datetime import datetime
+from datetime import date, datetime
 from io import BytesIO
 from urllib.parse import urlparse
 
@@ -68,6 +68,29 @@ COMMENT_HEADERS = [
     "Texto completo do comentário",
     "Link da Issue",
     "Parte",
+]
+PAC_SUMMARY_HEADERS = [
+    "ID",
+    "Título",
+    "Atribuído a",
+    "Estado",
+    "Data de criação",
+    "Total de comentários",
+    "Comentários da pessoa pesquisada",
+    "Pessoa pesquisada comentou?",
+    "Link da Issue",
+]
+PAC_COMMENT_HEADERS = [
+    "ID da Issue",
+    "Título",
+    "Atribuído a",
+    "Autor",
+    "Data",
+    "Hora",
+    "Comentário completo",
+    "Pessoa pesquisada comentou nesta Issue?",
+    "Este comentário é da pessoa pesquisada?",
+    "Link",
 ]
 
 
@@ -143,14 +166,18 @@ def build_audit_workbook(
     summary = workbook.active
     summary.title = "Resumo das Issues"
     exported = {**result, "base_url": base_url}
-    _write_summary(summary, exported)
+    pac_layout = _uses_project_comment_layout(query, result)
+    if pac_layout:
+        _write_pac_summary(summary, exported)
+    else:
+        _write_summary(summary, exported)
     split = False
     if include_all_discussions:
         discussions = workbook.create_sheet("Discussões completas")
         split = _write_full_discussions(discussions, exported, query)
     else:
         comments = workbook.create_sheet("Comentários encontrados")
-        split = _write_comments(comments, exported)
+        split = _write_pac_comments(comments, exported, query) if pac_layout else _write_comments(comments, exported)
     parameters = workbook.create_sheet("Parâmetros da Consulta")
     _write_parameters(
         parameters,
@@ -167,6 +194,78 @@ def build_audit_workbook(
     workbook.save(buffer)
     buffer.seek(0)
     return buffer, split
+
+
+def _uses_project_comment_layout(query: dict, result: dict) -> bool:
+    if str(result.get("comment_source") or "") == "comments_api":
+        return True
+    profile_id = str(result.get("profile_id") or query.get("profile_id") or "")
+    return profile_id == "nucleo-pac"
+
+
+def _write_pac_summary(sheet: Worksheet, result: dict) -> None:
+    _write_header(sheet, PAC_SUMMARY_HEADERS)
+    for issue in result.get("issues") or []:
+        url = str(issue.get("url") or "")
+        answered = "Sim" if issue.get("person_commented") else "Não"
+        sheet.append(
+            [
+                issue.get("id"),
+                safe_excel_text(issue.get("title")),
+                safe_excel_text(issue.get("assigned_to")),
+                safe_excel_text(issue.get("state")),
+                _format_stamp(issue.get("created_at"), with_time=False),
+                issue.get("comment_count") if issue.get("comment_count") is not None else "Falha",
+                issue.get("person_comment_count") or 0,
+                answered,
+                safe_excel_text(url),
+            ]
+        )
+        current = sheet.max_row
+        _link(sheet.cell(current, 1), url, result.get("base_url"))
+        _style_yes_no(sheet.cell(current, 8), answered == "Sim")
+        for cell in sheet[current]:
+            cell.alignment = Alignment(vertical="center", wrap_text=True)
+    _finish_sheet(sheet, [14, 48, 32, 28, 20, 22, 36, 32, 54])
+
+
+def _write_pac_comments(sheet: Worksheet, result: dict, query: dict) -> bool:
+    _write_header(sheet, PAC_COMMENT_HEADERS)
+    person = _person_target_from_export(query, result)
+    split = False
+    for issue in result.get("issues") or []:
+        url = str(issue.get("url") or "")
+        issue_has_person = "Sim" if issue.get("person_commented") else "Não"
+        for comment in issue.get("comments") or []:
+            local = to_local(parse_azure_datetime(comment.get("created_at")))
+            if local is None and comment.get("created_at_local"):
+                local = parse_azure_datetime(comment.get("created_at_local"))
+            is_person = person_matches(comment, person)
+            chunks = text_chunks(safe_excel_text(html_to_plain_text(comment.get("text"))))
+            if len(chunks) > 1:
+                split = True
+            for chunk in chunks:
+                sheet.append(
+                    [
+                        issue.get("id"),
+                        safe_excel_text(issue.get("title")),
+                        safe_excel_text(issue.get("assigned_to")),
+                        safe_excel_text(comment.get("author")),
+                        local.strftime("%d/%m/%Y") if local else "",
+                        local.strftime("%H:%M") if local else "",
+                        chunk,
+                        issue_has_person,
+                        "Sim" if is_person else "Não",
+                        safe_excel_text(url),
+                    ]
+                )
+                row = sheet.max_row
+                _link(sheet.cell(row, 1), url, result.get("base_url"))
+                sheet.cell(row, 7).alignment = WRAP
+                _style_yes_no(sheet.cell(row, 8), issue_has_person == "Sim")
+                _style_yes_no(sheet.cell(row, 9), is_person)
+    _finish_sheet(sheet, [14, 42, 28, 32, 18, 12, 80, 40, 42, 54])
+    return split
 
 
 def _write_summary(sheet: Worksheet, result: dict) -> None:
@@ -352,32 +451,56 @@ def _write_parameters(
         )
     if result.get("error_message"):
         limitations.append(str(result["error_message"]))
+    year = int(query.get("year") or 0)
+    if query.get("period_start") and query.get("period_end"):
+        interval = f"{_format_period_date(query.get('period_start'))} até {_format_period_date(query.get('period_end'))}"
+    else:
+        interval = f"01/01/{year} até antes de 01/01/{year + 1}"
+    comments_api = str(result.get("comment_source") or "") == "comments_api"
     rows = [
+        ("Coleção", query.get("organization")),
         ("Organização", query.get("organization")),
         ("Projeto", query.get("project")),
         ("Tipo de Work Item", query.get("work_item_type")),
         ("Critério de período", "Issues criadas no ano" if query.get("period_criterion") == "created" else "Issues alteradas no ano"),
         ("Ano", query.get("year")),
-        ("Intervalo", f"01/01/{query.get('year')} até antes de 01/01/{int(query.get('year') or 0) + 1}"),
+        ("Período", interval),
+        ("Intervalo", interval),
         ("Pessoa pesquisada", query.get("person_name")),
         ("Identificador da pessoa", query.get("person_identity_id") or result.get("person", {}).get("identity_id") or ""),
         ("Critério dos comentários", "Todo o histórico" if query.get("comment_scope") == "all" else "Apenas o período selecionado"),
+        (
+            "Modalidade de exportação",
+            "Discussões completas" if include_all_discussions else "Comentários da pessoa pesquisada",
+        ),
         ("Data e hora da geração", f"{generated} (America/Cuiaba)"),
+        ("Data da geração", f"{generated} (America/Cuiaba)"),
+        ("Quantidade de Issues", result.get("issues_found")),
         ("Total de Issues processadas", result.get("issues_found")),
+        ("Quantidade de comentários", result.get("comments_analyzed")),
         ("Total de comentários analisados", result.get("comments_analyzed")),
+        ("Quantidade de comentários da pessoa", result.get("comments_matched")),
         ("Total de comentários encontrados", result.get("comments_matched")),
+        ("Falhas de processamento", result.get("failure_count") or 0),
         ("Situação da consulta", _situation(result)),
+        ("Falhas e limitações", "\n".join(limitations) if limitations else "Nenhuma"),
         ("Limitações ou erros parciais", "\n".join(limitations) if limitations else "Nenhuma"),
         (
             "Fonte das discussões",
-            "Discussões extraídas dos registros de histórico disponíveis no Azure DevOps.",
+            "Comentários lidos da API de comentários do projeto no Azure DevOps (api-version 7.1-preview.4)."
+            if comments_api
+            else "Discussões extraídas dos registros de histórico disponíveis no Azure DevOps.",
         ),
     ]
+    if query.get("state"):
+        rows.insert(8, ("Estado", query.get("state")))
     if include_all_discussions:
         rows.append(
             (
                 "Exportação de discussões",
-                "Aba Discussões completas — todos os autores disponíveis no histórico.",
+                "Aba Discussões completas — todos os autores disponíveis na API de comentários."
+                if comments_api
+                else "Aba Discussões completas — todos os autores disponíveis no histórico.",
             )
         )
         rows.append(("Linhas de discussão exportadas", count_stored_all_comments(result)))
@@ -445,6 +568,14 @@ def _link(cell, url: str, base_url: str | None) -> None:
         return
     cell.hyperlink = url
     cell.font = Font(color="185A4A", underline="single")
+
+
+def _format_period_date(value: object) -> str:
+    text = str(value or "")[:10]
+    try:
+        return date.fromisoformat(text).strftime("%d/%m/%Y")
+    except ValueError:
+        return _format_stamp(value, with_time=False)
 
 
 def _format_stamp(value: object, *, with_time: bool) -> str:

@@ -171,6 +171,29 @@ export function ImportPage() {
     }
   }
 
+  const refreshAzurePreview = useCallback(async () => {
+    const preview = await api.previewAzureDevOpsSync(azureYear, azureMonth)
+    setAzurePreview(preview)
+  }, [azureYear, azureMonth])
+
+  const quickRegisterAssignees = useCallback(
+    async (assigneeNames: string[]) => {
+      const startDate = `${azureYear}-${String(azureMonth).padStart(2, '0')}-01`
+      for (const name of assigneeNames) {
+        await api.createCollaborator({
+          name,
+          azure_name: name,
+          start_date: startDate,
+          end_date: null,
+          daily_hours: 8,
+          active: true,
+        })
+      }
+      await refreshAzurePreview()
+    },
+    [azureYear, azureMonth, refreshAzurePreview],
+  )
+
   const confirmAzureSync = async (ignoreAssigneeNames: string[]) => {
     setBusy(true)
     setError(null)
@@ -601,6 +624,8 @@ export function ImportPage() {
           busy={busy}
           onConfirm={(ignoreAssigneeNames) => void confirmAzureSync(ignoreAssigneeNames)}
           onCancel={() => setAzurePreview(null)}
+          onRefreshPreview={refreshAzurePreview}
+          onQuickRegisterAssignees={quickRegisterAssignees}
         />
       )}
     </div>

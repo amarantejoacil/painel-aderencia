@@ -43,6 +43,7 @@ def _day_out(day, daily_hours: Decimal) -> DayResultOut:
         task_count=day.task_count,
         absence_type=day.absence_type,
         absence_note=day.absence_note,
+        absence_excused_hours=day.absence_excused_hours,
         launch_verification=verification,
         tasks=[
             DayTaskOut(

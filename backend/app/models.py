@@ -36,6 +36,7 @@ class CollaboratorAbsence(Base):
     start_date: Mapped[date] = mapped_column(Date, index=True)
     end_date: Mapped[date] = mapped_column(Date, index=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    excused_hours: Mapped[Decimal | None] = mapped_column(Numeric(6, 2), nullable=True)
 
     collaborator: Mapped[Collaborator] = relationship(back_populates="absences")
 
@@ -259,6 +260,10 @@ class IssueAuditQuery(Base):
     person_name: Mapped[str] = mapped_column(String(300))
     person_identity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     person_unique_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    profile_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    state_filter: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    period_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    period_end: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(20), index=True)
     issues_found: Mapped[int] = mapped_column(Integer, default=0)
     issues_processed: Mapped[int] = mapped_column(Integer, default=0)

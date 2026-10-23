@@ -90,6 +90,52 @@ def test_full_export_sheet_rows_and_flags() -> None:
     assert issue11[0][8] == "Não"
 
 
+def test_backfill_populates_all_comments_for_legacy_result() -> None:
+    from types import SimpleNamespace
+
+    from app.services.issue_audit.jobs import _backfill_all_comments
+
+    marcia = "Marcia Regina De Carvalho Buhr"
+    fake = FakeCollection(
+        {
+            10: [
+                _update("1", marcia, "a1", author_id="marcia-id"),
+                _update("2", "Outra", "b1", author_id="x"),
+            ],
+        }
+    )
+    row = SimpleNamespace(
+        project="Projeto",
+        comment_scope="all",
+        year=2025,
+        period_start=None,
+        period_end=None,
+        profile_id=None,
+        organization="CTI",
+        result={
+            "comment_source": "history",
+            "comments_analyzed": 2,
+            "issues": [
+                {
+                    "id": 10,
+                    "comment_count": 2,
+                    "comments": [{"text": "a1", "author": marcia, "author_id": "marcia-id"}],
+                    "person_comment_count": 1,
+                    "person_commented": True,
+                }
+            ],
+        },
+    )
+    fake.fetch_ui_comment_counts = lambda ids: {10: 2}  # type: ignore[method-assign]
+    updated = _backfill_all_comments(fake, row, should_cancel=lambda: False, on_progress=None)
+    issue = updated["issues"][0]
+    assert len(issue["all_comments"]) == 2
+    assert len(issue["comments"]) == 1
+    assert updated["comments_storage_version"] == 1
+    ok, _message = full_comments_exportable(updated)
+    assert ok is True
+
+
 def test_traditional_export_unchanged_sheet_name() -> None:
     result = _result_with_mixed_comments()
     query = {

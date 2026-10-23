@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.models import Collaborator
 from app.services.activity_normalization import NormalizedActivity
 from app.services.azure_mapper import SyncIgnoredItem, map_work_items
+from app.services.collaborator_matching import find_collaborator_by_assignee
 from app.services.csv_parser import normalize_name
 
 
@@ -42,7 +43,6 @@ def summarize_assignees(
 ) -> list[dict]:
     ignored_keys = {normalize_name(name) for name in saved_ignored}
     collaborators = list(db.scalars(select(Collaborator)).all())
-    by_azure = {normalize_name(item.azure_name): item for item in collaborators}
 
     counts: dict[str, int] = defaultdict(int)
     for item in mapped:
@@ -50,7 +50,7 @@ def summarize_assignees(
 
     rows: list[dict] = []
     for assignee_name in sorted(counts.keys(), key=lambda value: value.casefold()):
-        match = by_azure.get(normalize_name(assignee_name))
+        match = find_collaborator_by_assignee(collaborators, assignee_name)
         rows.append(
             {
                 "assignee_name": assignee_name,

@@ -27,6 +27,40 @@ const STATUS_LABEL: Record<IssueAuditSummary['status'], string> = {
 
 type SortKey = 'id' | 'title' | 'assigned_to' | 'state' | 'comment_count' | 'person_comment_count' | 'person_commented'
 
+type AuditProfile = {
+  id: string
+  label: string
+  organization: string
+  project: string
+  work_item_type: string
+  comment_strategy: 'history' | 'comments_api'
+}
+
+const FALLBACK_PROFILES: AuditProfile[] = [
+  {
+    id: 'cti-gabinete',
+    label: 'Gestão Gabinete Coordenadoria — CTI',
+    organization: 'CTI',
+    project: 'Gestão Gabinete Coordenadoria',
+    work_item_type: 'Issue',
+    comment_strategy: 'history',
+  },
+  {
+    id: 'nucleo-pac',
+    label: 'Núcleo de Aquisições – PAC — Nucleo',
+    organization: 'Nucleo',
+    project: 'Núcleo de Aquisições - PAC',
+    work_item_type: 'Issue',
+    comment_strategy: 'comments_api',
+  },
+]
+
+function profileFromQuery(data: IssueAuditDetail): string {
+  if (data.profile_id === 'nucleo-pac' || data.profile_id === 'cti-gabinete') return data.profile_id
+  if (data.organization === 'Nucleo') return 'nucleo-pac'
+  return 'cti-gabinete'
+}
+
 function formatCuiaba(value: string | null | undefined): string {
   if (!value) return '—'
   const date = new Date(value)
@@ -44,11 +78,13 @@ function formatCuiaba(value: string | null | undefined): string {
 export function IssuesAuditPage() {
   const params = useParams()
   const queryId = params.queryId ? Number(params.queryId) : null
-  const [organization, setOrganization] = useState('CTI')
-  const [project, setProject] = useState('Gestão Gabinete Coordenadoria')
-  const [projects, setProjects] = useState<string[]>([])
-  const [workItemType, setWorkItemType] = useState('Issue')
+  const [profiles, setProfiles] = useState<AuditProfile[]>(FALLBACK_PROFILES)
+  const [profileId, setProfileId] = useState('cti-gabinete')
   const [year, setYear] = useState(2025)
+  const [periodStart, setPeriodStart] = useState('')
+  const [periodEnd, setPeriodEnd] = useState('')
+  const [stateFilter, setStateFilter] = useState('')
+  const [states, setStates] = useState<string[]>([])
   const [periodCriterion, setPeriodCriterion] = useState<'created' | 'changed'>('created')
   const [personName, setPersonName] = useState('Marcia Regina De Carvalho Buhr')
   const [identityId, setIdentityId] = useState<string | null>(null)
@@ -65,6 +101,7 @@ export function IssuesAuditPage() {
   const [sortKey, setSortKey] = useState<SortKey>('person_comment_count')
   const [sortDesc, setSortDesc] = useState(true)
   const [expanded, setExpanded] = useState<number | null>(null)
+  const [discussionFilter, setDiscussionFilter] = useState<'all' | 'person'>('all')
   const [validation, setValidation] = useState<IssueAuditValidationRecord | null>(null)
   const [validating, setValidating] = useState(false)
   const [includeAllDiscussions, setIncludeAllDiscussions] = useState(false)
@@ -78,10 +115,11 @@ export function IssuesAuditPage() {
         const data = await api.getIssueAudit(queryId)
         if (stop) return
         setQuery(data)
-        setOrganization(data.organization)
-        setProject(data.project)
-        setWorkItemType(data.work_item_type)
+        setProfileId(profileFromQuery(data))
         setYear(data.year)
+        setPeriodStart(data.period_start ?? '')
+        setPeriodEnd(data.period_end ?? '')
+        setStateFilter(data.state_filter ?? '')
         setPeriodCriterion(data.period_criterion)
         setPersonName(data.person_name)
         setIdentityId(data.person_identity_id)
@@ -101,6 +139,28 @@ export function IssuesAuditPage() {
   }, [queryId])
 
   useEffect(() => {
+    void api.auditProfiles().then(setProfiles).catch(() => setProfiles(FALLBACK_PROFILES))
+  }, [])
+
+  const profile = profiles.find((item) => item.id === profileId) ?? FALLBACK_PROFILES[0]
+
+  useEffect(() => {
+    if (profile.comment_strategy !== 'comments_api') return
+    let stop = false
+    void api
+      .auditStates(profile.organization, profile.project, profile.work_item_type)
+      .then((names) => {
+        if (!stop) setStates(names)
+      })
+      .catch(() => {
+        if (!stop) setStates([])
+      })
+    return () => {
+      stop = true
+    }
+  }, [profile.id, profile.comment_strategy, profile.organization, profile.project, profile.work_item_type])
+
+  useEffect(() => {
     if (!query || (query.status !== 'queued' && query.status !== 'running')) return
     const timer = window.setInterval(() => {
       void api.getIssueAudit(query.id).then(setQuery).catch((err: Error) => setError(err.message))
@@ -108,18 +168,13 @@ export function IssuesAuditPage() {
     return () => window.clearInterval(timer)
   }, [query])
 
-  const loadProjects = async () => {
-    setError(null)
-    try {
-      const names = await api.auditProjects(organization.trim())
-      setProjects(names)
-      if (names.length && !names.some((item) => item.toLowerCase() === project.trim().toLowerCase())) {
-        setProject(names[0])
-      }
-    } catch (err) {
-      setProjects([])
-      setError((err as Error).message)
-    }
+  const selectProfile = (id: string) => {
+    setProfileId(id)
+    setIdentityId(null)
+    setUniqueName(null)
+    setCandidates([])
+    setPeopleMessage(null)
+    if (id !== 'nucleo-pac') setStateFilter('')
   }
 
   const searchPerson = async () => {
@@ -127,7 +182,7 @@ export function IssuesAuditPage() {
     setCandidates([])
     setBusy(true)
     try {
-      const found = await api.auditPeople(organization.trim(), personName.trim())
+      const found = await api.auditPeople(profile.organization, personName.trim())
       setPeopleMessage(found.message)
       if (found.status === 'matched' && found.people[0]) {
         setIdentityId(found.people[0].id)
@@ -167,13 +222,30 @@ export function IssuesAuditPage() {
             window.confirm(`${message}\n\nDeseja reprocessar os comentários completos agora? Isso pode levar vários minutos.`)
           ) {
             await api.backfillIssueAuditAllComments(query.id)
-            const refreshed = await api.getIssueAudit(query.id)
+            let refreshed = await api.getIssueAudit(query.id)
             setQuery(refreshed)
-            setError('Reprocessamento iniciado. Aguarde a conclusão e exporte novamente com a opção marcada.')
+            const deadline = Date.now() + 30 * 60 * 1000
+            while (
+              refreshed.status === 'queued' ||
+              refreshed.status === 'running'
+            ) {
+              if (Date.now() > deadline) {
+                setError('Reprocessamento ainda em andamento. Aguarde e exporte novamente com a opção marcada.')
+                return
+              }
+              await new Promise((resolve) => window.setTimeout(resolve, 2000))
+              refreshed = await api.getIssueAudit(query.id)
+              setQuery(refreshed)
+            }
+            const ready = await api.getIssueAuditExportReadiness(query.id)
+            if (!ready.exportable_full) {
+              setError(ready.message ?? 'Reprocessamento concluído, mas a exportação completa ainda não está disponível.')
+              return
+            }
           } else {
             setError(message)
+            return
           }
-          return
         }
       }
       const url = api.issueAuditExportUrl(query.id, { includeAllDiscussions: includeAllDiscussions })
@@ -190,9 +262,9 @@ export function IssuesAuditPage() {
     setBusy(true)
     try {
       const created = await api.createIssueAudit({
-        organization: organization.trim(),
-        project: project.trim(),
-        work_item_type: workItemType.trim() || 'Issue',
+        organization: profile.organization,
+        project: profile.project,
+        work_item_type: profile.work_item_type,
         period_criterion: periodCriterion,
         year,
         comment_scope: commentScope,
@@ -200,6 +272,10 @@ export function IssuesAuditPage() {
         person_identity_id: identityId,
         person_unique_name: uniqueName,
         requester: requester.trim() || null,
+        profile_id: profile.id,
+        state: profile.comment_strategy === 'comments_api' && stateFilter ? stateFilter : null,
+        period_start: periodStart || null,
+        period_end: periodEnd || null,
       })
       const detail = await api.getIssueAudit(created.id)
       setQuery(detail)
@@ -262,19 +338,24 @@ export function IssuesAuditPage() {
 
       <Card>
         <div className="grid gap-3 md:grid-cols-3">
-          <Field label="Organização / coleção">
-            <Input value={organization} onChange={(event) => setOrganization(event.target.value)} />
+          <Field label="Perfil">
+            <select
+              className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+              value={profile.id}
+              onChange={(event) => selectProfile(event.target.value)}
+            >
+              {profiles.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Coleção">
+            <Input value={profile.organization} readOnly />
           </Field>
           <Field label="Projeto">
-            <Input value={project} onChange={(event) => setProject(event.target.value)} list="audit-projects" />
-            <datalist id="audit-projects">
-              {projects.map((item) => (
-                <option key={item} value={item} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="Tipo de Work Item">
-            <Input value={workItemType} onChange={(event) => setWorkItemType(event.target.value)} />
+            <Input value={profile.project} readOnly />
           </Field>
           <Field label="Ano">
             <Input type="number" min={2000} max={2100} value={year} onChange={(event) => setYear(Number(event.target.value))} />
@@ -291,6 +372,24 @@ export function IssuesAuditPage() {
               <option value="period">Apenas no período selecionado</option>
             </select>
           </Field>
+          <Field label="Início do período (opcional)">
+            <Input type="date" value={periodStart} onChange={(event) => setPeriodStart(event.target.value)} />
+          </Field>
+          <Field label="Fim do período (opcional)">
+            <Input type="date" value={periodEnd} onChange={(event) => setPeriodEnd(event.target.value)} />
+          </Field>
+          {profile.comment_strategy === 'comments_api' && (
+            <Field label="Estado">
+              <select className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm" value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}>
+                <option value="">Todos</option>
+                {states.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
           <Field label="Pessoa pesquisada">
             <Input value={personName} onChange={(event) => { setPersonName(event.target.value); setIdentityId(null); setUniqueName(null) }} />
           </Field>
@@ -298,6 +397,12 @@ export function IssuesAuditPage() {
             <Input value={requester} onChange={(event) => setRequester(event.target.value)} placeholder="Sem login no painel" />
           </Field>
         </div>
+        <p className="mt-2 text-xs text-muted">
+          Tipo de Work Item: {profile.work_item_type}. Sem intervalo, a consulta usa o ano selecionado.
+          {profile.comment_strategy === 'comments_api'
+            ? ' Os comentários deste perfil vêm da API do projeto.'
+            : ' Os comentários deste perfil vêm do histórico do Work Item.'}
+        </p>
         {identityId && <p className="mt-2 text-xs text-muted">Identidade selecionada: {uniqueName || identityId}</p>}
         {peopleMessage && <p className="mt-2 text-sm text-amber-900">{peopleMessage}</p>}
         {candidates.length > 0 && (
@@ -321,9 +426,6 @@ export function IssuesAuditPage() {
           </div>
         )}
         <div className="mt-4 flex flex-wrap gap-2">
-          <Button type="button" variant="secondary" onClick={() => void loadProjects()} disabled={busy}>
-            Listar projetos
-          </Button>
           <Button type="button" variant="secondary" onClick={() => void searchPerson()} disabled={busy || personName.trim().length < 2}>
             Buscar pessoa
           </Button>
@@ -395,8 +497,12 @@ export function IssuesAuditPage() {
               value={query.issues_processed}
             />
             <Metric
-              label="Comentários no histórico (geral)"
-              hint="Todos os autores — revisões com texto em System.History, conforme escopo da consulta."
+              label={query.profile_id === 'nucleo-pac' ? 'Comentários disponíveis (geral)' : 'Comentários no histórico (geral)'}
+              hint={
+                query.profile_id === 'nucleo-pac'
+                  ? 'Todos os autores — comentários publicados na API do projeto, conforme escopo da consulta.'
+                  : 'Todos os autores — revisões com texto em System.History, conforme escopo da consulta.'
+              }
               value={query.comments_analyzed}
             />
             <Metric
@@ -467,7 +573,11 @@ export function IssuesAuditPage() {
             />
             <Metric
               label={`Issues sem comentário de ${query.person_name}`}
-              hint="Histórico lido, mas nenhum comentário atribuído à pessoa pesquisada."
+              hint={
+                query.profile_id === 'nucleo-pac'
+                  ? 'Comentários lidos, mas nenhum atribuído à pessoa pesquisada.'
+                  : 'Histórico lido, mas nenhum comentário atribuído à pessoa pesquisada.'
+              }
               value={query.result.issues_without_person}
             />
             <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar título ou ID" />
@@ -494,7 +604,15 @@ export function IssuesAuditPage() {
               {visible.map((issue) => (
                 <Fragment key={issue.id}>
                   <tr key={issue.id}>
-                    <Td>{issue.id}</Td>
+                    <Td>
+                      {issue.url ? (
+                        <a className="text-accent" href={issue.url} target="_blank" rel="noreferrer">
+                          {issue.id}
+                        </a>
+                      ) : (
+                        issue.id
+                      )}
+                    </Td>
                     <Td>{issue.title || '—'}</Td>
                     <Td>{issue.assigned_to || '—'}</Td>
                     <Td>{issue.state || '—'}</Td>
@@ -506,30 +624,25 @@ export function IssuesAuditPage() {
                       </span>
                     </Td>
                     <Td>
-                      <a className="text-accent" href={issue.url} target="_blank" rel="noreferrer">
-                        Abrir
-                      </a>
-                      {issue.person_commented && (
-                        <button type="button" className="ml-3 text-sm text-muted" onClick={() => setExpanded(expanded === issue.id ? null : issue.id)}>
-                          {expanded === issue.id ? 'Ocultar' : 'Comentários'}
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="text-sm text-muted"
+                        onClick={() => setExpanded(expanded === issue.id ? null : issue.id)}
+                      >
+                        {expanded === issue.id ? 'Ocultar' : 'Discussões'}
+                      </button>
                     </Td>
                   </tr>
                   {expanded === issue.id && (
                     <tr key={`${issue.id}-comments`}>
                       <Td colSpan={8}>
-                        <div className="flex flex-col gap-3">
-                          {issue.error && <p className="text-sm text-red-800">{issue.error}</p>}
-                          {issue.comments.map((comment) => (
-                            <article key={comment.id} className="rounded-md border border-line px-3 py-2">
-                              <p className="text-xs text-muted">
-                                {formatCuiaba(comment.created_at_local || comment.created_at)} · {comment.author}
-                              </p>
-                              <p className="mt-1 whitespace-pre-wrap text-sm">{comment.text}</p>
-                            </article>
-                          ))}
-                        </div>
+                        <DiscussionList
+                          issue={issue}
+                          filter={discussionFilter}
+                          identityId={query.person_identity_id}
+                          personName={query.person_name}
+                          onFilter={setDiscussionFilter}
+                        />
                       </Td>
                     </tr>
                   )}
@@ -541,6 +654,73 @@ export function IssuesAuditPage() {
       )}
     </div>
   )
+}
+
+function DiscussionList({
+  issue,
+  filter,
+  identityId,
+  personName,
+  onFilter,
+}: {
+  issue: IssueAuditIssue
+  filter: 'all' | 'person'
+  identityId: string | null
+  personName: string
+  onFilter: (value: 'all' | 'person') => void
+}) {
+  const storedAll = Array.isArray(issue.all_comments)
+  const source = storedAll ? issue.all_comments ?? [] : issue.comments
+  const shown = filter === 'person' ? issue.comments : source
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={cn('rounded-md border px-3 py-1 text-sm', filter === 'all' ? 'border-accent text-accent' : 'border-line text-muted')}
+          onClick={() => onFilter('all')}
+        >
+          Todos os comentários
+        </button>
+        <button
+          type="button"
+          className={cn('rounded-md border px-3 py-1 text-sm', filter === 'person' ? 'border-accent text-accent' : 'border-line text-muted')}
+          onClick={() => onFilter('person')}
+        >
+          Somente {shortPersonName(personName)}
+        </button>
+      </div>
+      {!storedAll && filter === 'all' && (
+        <p className="text-xs text-muted">Esta consulta guardou somente os comentários da pessoa pesquisada.</p>
+      )}
+      {issue.error && <p className="text-sm text-red-800">{issue.error}</p>}
+      {shown.length === 0 && <p className="text-sm text-muted">Nenhum comentário neste filtro.</p>}
+      {shown.map((comment) => {
+        const fromPerson = isPersonComment(issue, comment, identityId)
+        return (
+          <article
+            key={`${comment.id}-${comment.created_at}`}
+            className={cn('rounded-md border px-3 py-2', fromPerson ? 'border-emerald-300 bg-emerald-50' : 'border-line')}
+          >
+            <p className="text-xs text-muted">
+              {formatCuiaba(comment.created_at_local || comment.created_at)} · {comment.author}
+              {fromPerson ? ' · pessoa pesquisada' : ''}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-sm">{comment.text}</p>
+          </article>
+        )
+      })}
+    </div>
+  )
+}
+
+function isPersonComment(
+  issue: IssueAuditIssue,
+  comment: IssueAuditIssue['comments'][number],
+  identityId: string | null,
+): boolean {
+  if (comment.id && issue.comments.some((item) => item.id === comment.id)) return true
+  return Boolean(identityId && comment.author_id === identityId)
 }
 
 function compareIssues(left: IssueAuditIssue, right: IssueAuditIssue, key: SortKey): number {

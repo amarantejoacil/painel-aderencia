@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import Activity, Collaborator, ImportBatch
 from app.services.activity_normalization import NormalizedActivity
 from app.services.azure_mapper import SyncIgnoredItem
+from app.services.collaborator_matching import find_collaborator_by_assignee
 from app.services.csv_parser import normalize_name
 
 MONTH_NAMES = [
@@ -92,7 +93,6 @@ def match_collaborators(
     extra_warnings: list[dict] | None = None,
 ) -> tuple[list[Activity], list[dict], int, int]:
     collaborators = list(db.scalars(select(Collaborator)).all())
-    by_azure = {normalize_name(item.azure_name): item for item in collaborators}
 
     unmapped: set[str] = set()
     mapped_count = 0
@@ -100,7 +100,7 @@ def match_collaborators(
     warnings = list(extra_warnings or [])
 
     for item in items:
-        match = by_azure.get(normalize_name(item.assignee_name))
+        match = find_collaborator_by_assignee(collaborators, item.assignee_name)
         if match is None:
             unmapped.add(item.assignee_name)
         else:

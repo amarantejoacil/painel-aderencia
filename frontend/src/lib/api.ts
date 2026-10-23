@@ -228,6 +228,7 @@ export type DayResult = {
   tasks: DayTask[]
   absence_type?: string | null
   absence_note?: string | null
+  absence_excused_hours?: number | string | null
   launch_verification?: DayLaunchVerification | null
 }
 
@@ -238,6 +239,7 @@ export type CollaboratorAbsence = {
   start_date: string
   end_date: string
   note: string | null
+  excused_hours?: number | string | null
 }
 
 export type CollaboratorSummary = {
@@ -918,6 +920,10 @@ export type IssueAuditSummary = {
   person_name: string
   person_identity_id: string | null
   person_unique_name: string | null
+  profile_id?: string | null
+  state_filter?: string | null
+  period_start?: string | null
+  period_end?: string | null
   status: 'queued' | 'running' | 'complete' | 'partial' | 'failed' | 'cancelled' | 'ambiguous'
   issues_found: number
   issues_processed: number
@@ -951,6 +957,7 @@ export type IssueAuditIssue = {
   person_commented: boolean
   error: string | null
   comments: IssueAuditComment[]
+  all_comments?: IssueAuditComment[]
 }
 
 export type IssueAuditCandidate = {
@@ -1354,6 +1361,25 @@ export const api = {
       `/projects/sprints/${encodeURIComponent(sprintKey)}${suffix}`,
     )
   },
+  auditProfiles: () =>
+    request<
+      Array<{
+        id: string
+        label: string
+        organization: string
+        project: string
+        work_item_type: string
+        comment_strategy: 'history' | 'comments_api'
+      }>
+    >('/audit/issues/profiles'),
+  auditStates: (organization: string, project: string, workItemType: string) => {
+    const params = new URLSearchParams({
+      organization,
+      project,
+      work_item_type: workItemType,
+    })
+    return request<string[]>(`/audit/issues/states?${params}`)
+  },
   auditProjects: (organization: string) =>
     request<string[]>(`/audit/issues/projects?organization=${encodeURIComponent(organization)}`),
   auditPeople: (organization: string, name: string) =>
@@ -1372,6 +1398,10 @@ export const api = {
     person_identity_id?: string | null
     person_unique_name?: string | null
     requester?: string | null
+    profile_id?: string | null
+    state?: string | null
+    period_start?: string | null
+    period_end?: string | null
   }) => request<IssueAuditSummary>('/audit/issues/queries', { method: 'POST', body: JSON.stringify(payload) }),
   getIssueAudit: (id: number) => request<IssueAuditDetail>(`/audit/issues/queries/${id}`),
   cancelIssueAudit: (id: number) =>

@@ -70,7 +70,10 @@ export function AuditHistoryPage() {
                 <Td>{row.organization}</Td>
                 <Td>{row.project}</Td>
                 <Td>
-                  {PERIOD_LABEL[row.period_criterion]} {row.year}
+                  {row.period_start && row.period_end
+                    ? `${row.period_start} a ${row.period_end}`
+                    : `${PERIOD_LABEL[row.period_criterion]} ${row.year}`}
+                  {row.state_filter ? ` · ${row.state_filter}` : ''}
                 </Td>
                 <Td>{row.person_name}</Td>
                 <Td>{row.issues_found}</Td>

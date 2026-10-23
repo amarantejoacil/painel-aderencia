@@ -6,8 +6,14 @@ from datetime import date
 from typing import Any
 
 from app.services.azure_devops_errors import AzureDevOpsAuthError, AzureDevOpsError
-from app.services.issue_audit.client import COMMENT_SOURCE_LIMITATION, AzureCollectionClient, work_item_url
+from app.services.issue_audit.client import (
+    COMMENT_SOURCE_LIMITATION,
+    COMMENTS_API_SOURCE_NOTE,
+    AzureCollectionClient,
+    work_item_url,
+)
 from app.services.issue_audit.field_refs import (
+    WORK_ITEM_BASE_FIELDS,
     extract_planning_fields,
     load_field_catalog_from_client,
     resolve_issue_work_item_fields,
@@ -16,12 +22,15 @@ from app.services.issue_audit.matching import (
     PersonTarget,
     author_key,
     candidate_from_comment,
+    comment_from_api,
     comment_from_update,
     display_identity,
+    in_selected_dates,
     in_selected_year,
     name_matches,
     person_matches,
 )
+from app.services.issue_audit.profiles import PAC_WORK_ITEM_FIELDS, period_bounds
 
 MAX_WORKERS = 4
 DATE_FIELDS = {
@@ -31,6 +40,38 @@ DATE_FIELDS = {
 
 
 ProgressCallback = Callable[[int, int, int, int], None]
+
+
+def apply_comment_scope(
+    comments: list[dict[str, Any]],
+    *,
+    comment_scope: str,
+    year: int,
+    period_start: date | None,
+    period_end: date | None,
+) -> list[dict[str, Any]]:
+    if comment_scope != "period":
+        return comments
+    if period_start is not None and period_end is not None:
+        return [comment for comment in comments if in_selected_dates(comment, period_start, period_end)]
+    return [comment for comment in comments if in_selected_year(comment, year)]
+
+
+def collect_comments(
+    client: AzureCollectionClient,
+    *,
+    project: str,
+    work_item_id: int,
+    strategy: str,
+) -> list[dict[str, Any]]:
+    if strategy == "comments_api":
+        raw = client.fetch_work_item_comments(project, work_item_id)
+        comments = [comment for item in raw if (comment := comment_from_api(item))]
+    else:
+        updates = client.fetch_comment_updates(work_item_id)
+        comments = [comment for update in updates if (comment := comment_from_update(update))]
+    comments.sort(key=lambda comment: comment.get("created_at") or "")
+    return comments
 
 
 def execute_audit(
@@ -44,11 +85,16 @@ def execute_audit(
     person: PersonTarget,
     on_progress: ProgressCallback | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    comment_strategy: str = "history",
+    planning_fields: bool = True,
+    profile_id: str | None = None,
+    period_start: date | None = None,
+    period_end: date | None = None,
+    state: str | None = None,
 ) -> dict[str, Any]:
-    limitations = [COMMENT_SOURCE_LIMITATION]
+    limitations = [COMMENTS_API_SOURCE_NOTE if comment_strategy == "comments_api" else COMMENT_SOURCE_LIMITATION]
     client.ensure_project(project)
-    start = date(year, 1, 1)
-    end = date(year + 1, 1, 1)
+    start, end = period_bounds(year, period_start, period_end)
     date_field = DATE_FIELDS[period_criterion]
     ids, split_notes = client.query_work_item_ids(
         project=project,
@@ -56,17 +102,26 @@ def execute_audit(
         date_field=date_field,
         start=start,
         end=end,
+        state=state,
     )
     limitations.extend(split_notes)
     found = len(ids)
     if on_progress:
         on_progress(found, 0, 0, 0)
 
-    field_resolution = resolve_issue_work_item_fields(load_field_catalog_from_client(client))
+    if planning_fields:
+        field_resolution = resolve_issue_work_item_fields(load_field_catalog_from_client(client))
+    else:
+        field_resolution = {
+            "refs": list(PAC_WORK_ITEM_FIELDS),
+            "mapping": {"bucket": None, "areas_internas": None, "areas_externa": None},
+        }
     field_mapping = field_resolution["mapping"]
     field_meta = {
         "work_item_field_refs": field_resolution["refs"],
         "work_item_field_mapping": field_resolution["mapping"],
+        "profile_id": profile_id,
+        "comment_source": comment_strategy,
     }
     items, item_failures = client.fetch_work_items(ids, field_refs=field_resolution["refs"])
     by_id = {}
@@ -105,7 +160,16 @@ def execute_audit(
         pending = pending[40:]
         comment_map: dict[int, list[dict[str, Any]] | Exception] = {}
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
-            futures = {pool.submit(client.fetch_comment_updates, item_id): item_id for item_id in chunk}
+            futures = {
+                pool.submit(
+                    collect_comments,
+                    client,
+                    project=project,
+                    work_item_id=item_id,
+                    strategy=comment_strategy,
+                ): item_id
+                for item_id in chunk
+            }
             for future in as_completed(futures):
                 item_id = futures[future]
                 try:
@@ -143,10 +207,13 @@ def execute_audit(
                 failed_ids.append(item_id)
                 failure_count += 1
             else:
-                comments = [comment for update in (outcome or []) if (comment := comment_from_update(update))]
-                if comment_scope == "period":
-                    comments = [comment for comment in comments if in_selected_year(comment, year)]
-                comments.sort(key=lambda comment: comment.get("created_at") or "")
+                comments = apply_comment_scope(
+                    list(outcome or []),
+                    comment_scope=comment_scope,
+                    year=year,
+                    period_start=period_start,
+                    period_end=period_end,
+                )
                 comments_analyzed += len(comments)
                 issues.append(_issue_from_work_item(client, project, item, comments, field_mapping=field_mapping))
             processed += 1
@@ -293,6 +360,8 @@ def _payload(
     error_message: str | None = None,
     work_item_field_refs: list[str] | None = None,
     work_item_field_mapping: dict[str, str | None] | None = None,
+    profile_id: str | None = None,
+    comment_source: str = "history",
 ) -> dict[str, Any]:
     finalized: list[dict[str, Any]] = []
     matched_total = 0
@@ -332,8 +401,10 @@ def _payload(
             "unique_name": person.unique_name,
         },
         "error_message": error_message,
-        "work_item_field_refs": work_item_field_refs or [],
+        "work_item_field_refs": work_item_field_refs or list(WORK_ITEM_BASE_FIELDS),
         "work_item_field_mapping": work_item_field_mapping or {},
+        "profile_id": profile_id,
+        "comment_source": comment_source,
         "comments_storage_version": 1,
         "issues": finalized,
     }

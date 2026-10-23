@@ -117,6 +117,41 @@ export function isWeekendDate(value: string): boolean {
   return weekday === 0 || weekday === 6
 }
 
+/** Dias úteis (seg–sex) entre duas datas ISO inclusivas. */
+export function countWeekdaysBetween(startIso: string, endIso: string): number {
+  if (!startIso || !endIso) return 0
+  const [sy, sm, sd] = startIso.split('-').map(Number)
+  const [ey, em, ed] = endIso.split('-').map(Number)
+  const start = new Date(sy, sm - 1, sd)
+  const end = new Date(ey, em - 1, ed)
+  if (end < start) return 0
+  let count = 0
+  const cursor = new Date(start)
+  while (cursor <= end) {
+    const day = cursor.getDay()
+    if (day !== 0 && day !== 6) count += 1
+    cursor.setDate(cursor.getDate() + 1)
+  }
+  return count
+}
+
+/** Dias úteis do intervalo que caem no mês/ano informados. */
+export function countWeekdaysInMonthRange(
+  startIso: string,
+  endIso: string,
+  year: number,
+  month: number,
+): number {
+  if (!startIso || !endIso) return 0
+  const monthStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const lastDay = new Date(year, month, 0).getDate()
+  const monthEnd = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+  const clipStart = startIso > monthStart ? startIso : monthStart
+  const clipEnd = endIso < monthEnd ? endIso : monthEnd
+  if (clipEnd < clipStart) return 0
+  return countWeekdaysBetween(clipStart, clipEnd)
+}
+
 export function currentYearMonth(): { year: number; month: number } {
   const now = new Date()
   return { year: now.getFullYear(), month: now.getMonth() + 1 }

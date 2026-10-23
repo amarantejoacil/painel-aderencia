@@ -15,12 +15,14 @@
 
 ## API alternativa de comentários
 
-- `GET …/workItems/{id}/comments?api-version=7.1-preview.4` (e outras preview).
-- No Azure DevOps Server TJMT pode retornar 404; a validação sonda essa API por Issue na amostra.
+- Escopo do projeto: `GET {base}/{coleção}/{projeto}/_apis/wit/workItems/{id}/comments?api-version=7.1-preview.4`.
+- Escopo da coleção (sem projeto) costuma retornar 404 no Azure DevOps Server TJMT.
+- A auditoria **CTI** continua usando apenas o histórico; a API de comentários do projeto pode ser usada na **validação** para diagnosticar divergências com `System.CommentCount`.
 
 ## Riscos conhecidos
 
-- Histórico (`System.History`) ≠ contador de “comentários” da UI do Azure.
+- Histórico (`System.History`) ≠ contador de “comentários” da UI do Azure (`System.CommentCount`).
+- Exemplo observado: Issue CTI #1667 — UI 35, histórico 34, API de comentários do projeto 35 (um comentário sem `System.History` na revisão).
 - Edições geram nova revisão; exclusões não são detectadas.
 - Menções no texto não definem autoria (somente `revisedBy`).
 - WIQL truncado ou falha parcial deixa Issues fora do resultado armazenado.

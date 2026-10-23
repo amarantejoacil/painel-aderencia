@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.analysis.engine import AbsenceInput, ActivityInput, CollaboratorInput
+from app.analysis.engine import AbsenceInput, ActivityInput, CollaboratorInput, q
 from app.models import Activity, CalendarException, Collaborator, CollaboratorAbsence, ImportBatch
 from app.services.azure_devops_config import get_ignored_assignees
 from app.services.azure_state_labels import is_azure_state_removed
@@ -81,5 +81,9 @@ def load_collaborator_absences(db: Session) -> dict[int, dict[date, AbsenceInput
     for row in rows:
         by_date = result.setdefault(row.collaborator_id, {})
         for day in _expand_absence_dates(row.start_date, row.end_date):
-            by_date[day] = AbsenceInput(type=row.type, note=row.note)
+            by_date[day] = AbsenceInput(
+                type=row.type,
+                note=row.note,
+                excused_hours=q(row.excused_hours) if row.excused_hours is not None else None,
+            )
     return result

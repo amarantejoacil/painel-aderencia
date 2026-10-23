@@ -157,8 +157,10 @@ export function CollaboratorsPage() {
             <Input
               id="hours"
               type="number"
-              min="1"
-              step="0.5"
+              min={1}
+              max={24}
+              step="any"
+              inputMode="decimal"
               value={form.daily_hours}
               onChange={(e) => setForm({ ...form, daily_hours: e.target.value })}
               required

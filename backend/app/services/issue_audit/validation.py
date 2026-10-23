@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -11,14 +11,11 @@ from sqlalchemy.orm import Session
 
 from app.models import IssueAuditQuery, IssueAuditValidation
 from app.services.azure_devops_errors import AzureDevOpsAuthError, AzureDevOpsConfigError, AzureDevOpsError
-from app.services.issue_audit.client import COMMENT_SOURCE_LIMITATION, AzureCollectionClient
-from app.services.issue_audit.jobs import _client
-from app.services.issue_audit.matching import (
-    PersonTarget,
-    comment_from_update,
-    in_selected_year,
-    person_matches,
-)
+from app.services.issue_audit.client import COMMENTS_API_SOURCE_NOTE, COMMENT_SOURCE_LIMITATION, AzureCollectionClient
+from app.services.issue_audit.jobs import _client, _comment_strategy
+from app.services.issue_audit.matching import PersonTarget, person_matches
+from app.services.issue_audit.profiles import period_bounds
+from app.services.issue_audit.runner import apply_comment_scope, collect_comments
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +57,13 @@ def run_validation(db: Session, row: IssueAuditQuery) -> IssueAuditValidation:
     client = _client(db, row.organization)
     try:
         person = PersonTarget(row.person_name, row.person_identity_id, row.person_unique_name)
+        strategy = _comment_strategy(row)
         coverage = validate_coverage(client, row)
         sample_ids = build_stratified_sample(row.result.get("issues") or [], row)
         sample_items = []
         probes: list[dict[str, Any]] = []
         for index, issue_id in enumerate(sample_ids):
-            item = validate_issue_sample(client, row, person, issue_id)
+            item = validate_issue_sample(client, row, person, issue_id, strategy=strategy)
             sample_items.append(item)
             if index < PROBE_COMMENTS_LIMIT:
                 try:
@@ -79,7 +77,7 @@ def run_validation(db: Session, row: IssueAuditQuery) -> IssueAuditValidation:
         metrics = compute_metrics(coverage, sample_items, row)
         payload = {
             "validated_at": _now_iso(),
-            "methodology": extraction_diagnosis(),
+            "methodology": extraction_diagnosis() if strategy == "history" else _comments_api_diagnosis(),
             "coverage": coverage,
             "comment_api_probes": probes,
             "sample": {"issue_ids": sample_ids, "items": sample_items},
@@ -113,8 +111,7 @@ def run_validation(db: Session, row: IssueAuditQuery) -> IssueAuditValidation:
 
 
 def validate_coverage(client: AzureCollectionClient, row: IssueAuditQuery) -> dict[str, Any]:
-    start = date(row.year, 1, 1)
-    end = date(row.year + 1, 1, 1)
+    start, end = period_bounds(row.year, row.period_start, row.period_end)
     date_field = DATE_FIELDS[row.period_criterion]
     wiql_ids, wiql_notes = client.query_work_item_ids(
         project=row.project,
@@ -122,6 +119,7 @@ def validate_coverage(client: AzureCollectionClient, row: IssueAuditQuery) -> di
         date_field=date_field,
         start=start,
         end=end,
+        state=row.state_filter,
     )
     stored_issues = row.result.get("issues") or [] if row.result else []
     stored_ids_raw = [int(item["id"]) for item in stored_issues if item.get("id") is not None]
@@ -240,20 +238,38 @@ def validate_issue_sample(
     row: IssueAuditQuery,
     person: PersonTarget,
     issue_id: int,
+    strategy: str = "history",
 ) -> dict[str, Any]:
     stored = next((item for item in (row.result or {}).get("issues") or [] if int(item.get("id") or 0) == issue_id), None)
     original_count = stored.get("comment_count") if stored else None
     original_person = stored.get("person_comment_count") if stored else None
     original_comments = stored.get("comments") or [] if stored else []
     try:
-        updates = client.fetch_comment_updates(issue_id)
-        comments = [c for u in updates if (c := comment_from_update(u))]
-        if row.comment_scope == "period":
-            comments = [c for c in comments if in_selected_year(c, row.year)]
-        comments.sort(key=lambda c: c.get("created_at") or "")
+        comments = collect_comments(client, project=row.project, work_item_id=issue_id, strategy=strategy)
+        comments = apply_comment_scope(
+            comments,
+            comment_scope=row.comment_scope,
+            year=row.year,
+            period_start=row.period_start,
+            period_end=row.period_end,
+        )
         person_comments = [c for c in comments if person_matches(c, person)]
         reextracted_count = len(comments)
         reextracted_person = len(person_comments)
+        ui_count = None
+        project_api_count = None
+        try:
+            ui_map = client.fetch_ui_comment_counts([issue_id])
+            ui_count = ui_map.get(issue_id)
+        except AzureDevOpsError:
+            ui_count = None
+        if strategy == "history":
+            try:
+                probe = client.probe_project_comments_api(row.project, issue_id)
+                if probe.get("available"):
+                    project_api_count = probe.get("count")
+            except AzureDevOpsError:
+                project_api_count = None
         count_match = original_count == reextracted_count if original_count is not None else None
         person_match = original_person == reextracted_person if original_person is not None else None
         auto_status = "confere" if count_match and person_match else "divergencia" if count_match is False or person_match is False else "nao_verificado"
@@ -262,7 +278,7 @@ def validate_issue_sample(
             "url": stored.get("url") if stored else None,
             "title": stored.get("title") if stored else "",
             "stratum_hint": _stratum_hint(stored),
-            "source": "system_history",
+            "source": "comments_api" if strategy == "comments_api" else "system_history",
             "original": {
                 "comment_count": original_count,
                 "person_comment_count": original_person,
@@ -271,6 +287,8 @@ def validate_issue_sample(
                 "comment_count": reextracted_count,
                 "person_comment_count": reextracted_person,
             },
+            "azure_ui_comment_count": ui_count,
+            "project_comments_api_count": project_api_count,
             "auto_status": auto_status,
             "divergence": _divergence_detail(original_count, reextracted_count, original_person, reextracted_person),
             "comments_preview": [
@@ -292,7 +310,7 @@ def validate_issue_sample(
             "url": stored.get("url") if stored else None,
             "auto_status": "nao_verificado",
             "error": str(exc),
-            "source": "system_history",
+            "source": "comments_api" if strategy == "comments_api" else "system_history",
             "original": {"comment_count": original_count, "person_comment_count": original_person},
             "reextracted": None,
         }
@@ -398,6 +416,19 @@ def _stratum_hint(stored: dict[str, Any] | None) -> str:
     if (stored.get("comment_count") or 0) == 0:
         return "zero_comments"
     return "without_person"
+
+
+def _comments_api_diagnosis() -> dict[str, Any]:
+    return {
+        "source": "comments_api",
+        "limitation": COMMENTS_API_SOURCE_NOTE,
+        "documentation": "",
+        "risks": [
+            "A API de comentários do projeto é a fonte desta consulta.",
+            "Comentários sem texto não entram na contagem.",
+            "Autoria usa o identificador da coleção consultada; o identificador de outra coleção não é equivalente.",
+        ],
+    }
 
 
 def _now() -> datetime:

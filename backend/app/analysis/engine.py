@@ -29,6 +29,7 @@ def q(value: Decimal | int | float | str) -> Decimal:
 class AbsenceInput:
     type: str
     note: str | None = None
+    excused_hours: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +79,7 @@ class DayResult:
     tasks: list[DayTask] = field(default_factory=list)
     absence_type: str | None = None
     absence_note: str | None = None
+    absence_excused_hours: Decimal | None = None
 
 
 @dataclass
@@ -194,6 +196,35 @@ def month_days(year: int, month: int) -> list[date]:
     return [date(year, month, day) for day in range(1, last + 1)]
 
 
+def _absence_day_tasks(by_date: dict[date, list[ActivityInput]], day: date) -> list[ActivityInput]:
+    return by_date.get(day, [])
+
+
+def _day_tasks_out(day_tasks: list[ActivityInput]) -> list[DayTask]:
+    return [
+        DayTask(
+            task_id=task.task_id,
+            title=task.title,
+            completed_hours=q(task.completed_hours) if task.completed_hours is not None else None,
+            state=task.state,
+            project=task.project,
+            activity_category=task.activity_category,
+            estimated_hours=q(task.estimated_hours) if task.estimated_hours is not None else None,
+        )
+        for task in sorted(day_tasks, key=lambda item: item.task_id)
+    ]
+
+
+def _expected_after_absence(base_expected: Decimal, absence: AbsenceInput) -> tuple[Decimal, Decimal | None]:
+    if absence.excused_hours is None:
+        return q(0), None
+    excused = min(q(absence.excused_hours), q(base_expected))
+    remaining = q(base_expected - excused)
+    if remaining <= 0:
+        return q(0), excused
+    return remaining, excused
+
+
 def analyze_collaborator(
     collaborator: CollaboratorInput,
     activities: list[ActivityInput],
@@ -228,34 +259,46 @@ def analyze_collaborator(
         expected = expected_hours(collaborator, day, exception_dates, today)
 
         if absence is not None and expected > 0:
-            day_tasks = by_date.get(day, [])
+            day_tasks = _absence_day_tasks(by_date, day)
+            adjusted_expected, excused = _expected_after_absence(expected, absence)
+            if excused is None or adjusted_expected == 0:
+                result = DayResult(
+                    date=day,
+                    expected=q(0),
+                    executed=q(0),
+                    difference=q(0),
+                    status=STATUS_JUSTIFIED_ABSENCE,
+                    hours_source=HOURS_NONE,
+                    task_count=len(day_tasks),
+                    tasks=_day_tasks_out(day_tasks),
+                    absence_type=absence.type,
+                    absence_note=absence.note,
+                    absence_excused_hours=excused,
+                )
+                days.append(result)
+                counts[STATUS_JUSTIFIED_ABSENCE] += 1
+                continue
+
+            executed, source = executed_for_day(day_tasks, collaborator.daily_hours)
+            status = classify_status(adjusted_expected, executed)
             result = DayResult(
                 date=day,
-                expected=q(0),
-                executed=q(0),
-                difference=q(0),
-                status=STATUS_JUSTIFIED_ABSENCE,
-                hours_source=HOURS_NONE,
+                expected=adjusted_expected,
+                executed=executed,
+                difference=q(executed - adjusted_expected),
+                status=status,
+                hours_source=source,
                 task_count=len(day_tasks),
-                tasks=[
-                    DayTask(
-                        task_id=task.task_id,
-                        title=task.title,
-                        completed_hours=q(task.completed_hours) if task.completed_hours is not None else None,
-                        state=task.state,
-                        project=task.project,
-                        activity_category=task.activity_category,
-                        estimated_hours=q(task.estimated_hours)
-                        if task.estimated_hours is not None
-                        else None,
-                    )
-                    for task in sorted(day_tasks, key=lambda item: item.task_id)
-                ],
+                tasks=_day_tasks_out(day_tasks),
                 absence_type=absence.type,
                 absence_note=absence.note,
+                absence_excused_hours=excused,
             )
             days.append(result)
-            counts[STATUS_JUSTIFIED_ABSENCE] += 1
+            counts[status] += 1
+            total_expected += adjusted_expected
+            total_executed += executed
+            capped += adherence_hours(executed, adjusted_expected)
             continue
 
         day_tasks = by_date.get(day, [])

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -28,6 +28,7 @@ from app.services.issue_audit.jobs import (
     retry_failed,
     select_identity,
 )
+from app.services.issue_audit.profiles import AUDIT_PROFILES, get_profile
 from app.services.issue_audit.validation import (
     extraction_diagnosis,
     get_latest_validation,
@@ -49,6 +50,10 @@ class IssueAuditCreate(BaseModel):
     person_identity_id: str | None = Field(default=None, max_length=100)
     person_unique_name: str | None = Field(default=None, max_length=300)
     requester: str | None = Field(default=None, max_length=200)
+    profile_id: str | None = Field(default=None, max_length=80)
+    state: str | None = Field(default=None, max_length=200)
+    period_start: date | None = None
+    period_end: date | None = None
 
 
 class IssueAuditIdentity(BaseModel):
@@ -71,6 +76,10 @@ class IssueAuditSummary(BaseModel):
     person_name: str
     person_identity_id: str | None
     person_unique_name: str | None
+    profile_id: str | None = None
+    state_filter: str | None = None
+    period_start: date | None = None
+    period_end: date | None = None
     status: str
     issues_found: int
     issues_processed: int
@@ -120,6 +129,10 @@ def _summary(row: IssueAuditQuery) -> IssueAuditSummary:
         person_name=row.person_name,
         person_identity_id=row.person_identity_id,
         person_unique_name=row.person_unique_name,
+        profile_id=row.profile_id,
+        state_filter=row.state_filter,
+        period_start=row.period_start,
+        period_end=row.period_end,
         status=row.status,
         issues_found=row.issues_found,
         issues_processed=row.issues_processed,
@@ -144,6 +157,29 @@ def _http(exc: AzureDevOpsError) -> HTTPException:
     if isinstance(exc, AzureDevOpsConnectionError):
         return HTTPException(status_code=502, detail=str(exc))
     return HTTPException(status_code=502, detail="Não foi possível consultar o Azure DevOps.")
+
+
+@router.get("/profiles")
+def get_audit_profiles() -> list[dict]:
+    return [profile.as_dict() for profile in AUDIT_PROFILES]
+
+
+@router.get("/states", response_model=list[str])
+def get_states(
+    organization: str = Query(min_length=1),
+    project: str = Query(min_length=1),
+    work_item_type: str = Query(default="Issue", min_length=1),
+    db: Session = Depends(get_db),
+) -> list[str]:
+    from app.services.issue_audit.jobs import _client
+
+    client = _client(db, organization)
+    try:
+        return client.list_work_item_states(project, work_item_type)
+    except AzureDevOpsError as exc:
+        raise _http(exc) from exc
+    finally:
+        client.close()
 
 
 @router.get("/projects", response_model=list[str])
@@ -175,7 +211,40 @@ def list_queries(db: Session = Depends(get_db)) -> list[IssueAuditSummary]:
 @router.post("/queries", response_model=IssueAuditSummary)
 def post_query(payload: IssueAuditCreate, db: Session = Depends(get_db)) -> IssueAuditSummary:
     try:
-        row = create_query(db, **payload.model_dump())
+        organization = payload.organization.strip()
+        project = payload.project.strip()
+        work_item_type = payload.work_item_type.strip()
+        profile = get_profile(payload.profile_id)
+        if payload.profile_id and profile is None:
+            raise AzureDevOpsConfigError("Perfil de auditoria desconhecido.")
+        if profile is not None:
+            organization = profile.organization
+            project = profile.project
+            work_item_type = profile.work_item_type
+        state = (payload.state or "").strip() or None
+        if profile is None or profile.comment_strategy != "comments_api":
+            state = None
+        if (payload.period_start is None) != (payload.period_end is None):
+            raise AzureDevOpsConfigError("Informe a data inicial e a data final do período.")
+        if payload.period_start and payload.period_end and payload.period_end < payload.period_start:
+            raise AzureDevOpsConfigError("A data final do período é anterior à data inicial.")
+        row = create_query(
+            db,
+            requester=payload.requester,
+            organization=organization,
+            project=project,
+            work_item_type=work_item_type,
+            period_criterion=payload.period_criterion,
+            year=payload.year,
+            comment_scope=payload.comment_scope,
+            person_name=payload.person_name,
+            person_identity_id=payload.person_identity_id,
+            person_unique_name=payload.person_unique_name,
+            profile_id=profile.id if profile else None,
+            state_filter=state,
+            period_start=payload.period_start,
+            period_end=payload.period_end,
+        )
     except AzureDevOpsError as exc:
         raise _http(exc) from exc
     return _summary(row)
@@ -365,6 +434,10 @@ def export_query(
             "comment_scope": row.comment_scope,
             "person_name": row.person_name,
             "person_identity_id": row.person_identity_id,
+            "profile_id": row.profile_id,
+            "state": row.state_filter,
+            "period_start": row.period_start.isoformat() if row.period_start else None,
+            "period_end": row.period_end.isoformat() if row.period_end else None,
         },
         row.result,
         base_url=base_url,

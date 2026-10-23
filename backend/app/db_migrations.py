@@ -55,3 +55,22 @@ def ensure_schema(engine: Engine) -> None:
                 columns,
             )
             _add_column_if_missing(connection, "activities", "source", "VARCHAR(20) DEFAULT 'csv'", columns)
+
+    if "issue_audit_queries" in tables:
+        columns = {column["name"] for column in inspector.get_columns("issue_audit_queries")}
+        with engine.begin() as connection:
+            _add_column_if_missing(connection, "issue_audit_queries", "profile_id", "VARCHAR(80)", columns)
+            _add_column_if_missing(connection, "issue_audit_queries", "state_filter", "VARCHAR(200)", columns)
+            _add_column_if_missing(connection, "issue_audit_queries", "period_start", "DATE", columns)
+            _add_column_if_missing(connection, "issue_audit_queries", "period_end", "DATE", columns)
+
+    if "collaborator_absences" in tables:
+        columns = {column["name"] for column in inspector.get_columns("collaborator_absences")}
+        with engine.begin() as connection:
+            _add_column_if_missing(
+                connection,
+                "collaborator_absences",
+                "excused_hours",
+                "NUMERIC(6, 2)",
+                columns,
+            )

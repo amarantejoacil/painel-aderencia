@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,11 @@ import { api, type CollaboratorAbsence, type CollaboratorAnalysis, type DayResul
 import {
   ABSENCE_TYPE_LABEL,
   currentYearMonth,
+  countWeekdaysBetween,
+  countWeekdaysInMonthRange,
   formatDate,
   formatAzureState,
+  formatDateRange,
   formatDateWithWeekday,
   formatHours,
   formatPercent,
@@ -55,6 +58,11 @@ export function CollaboratorDetailPage() {
   const [data, setData] = useState<CollaboratorAnalysis | null>(null)
   const [absences, setAbsences] = useState<CollaboratorAbsence[]>([])
   const [form, setForm] = useState(EMPTY_ABSENCE)
+  const [singleDayAbsence, setSingleDayAbsence] = useState(false)
+  const [medicalCoverage, setMedicalCoverage] = useState<
+    'full' | 'half_afternoon' | 'half_morning' | 'custom'
+  >('full')
+  const [customExcusedHours, setCustomExcusedHours] = useState('')
   const [selected, setSelected] = useState<DayResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [absenceError, setAbsenceError] = useState<string | null>(null)
@@ -76,17 +84,101 @@ export function CollaboratorDetailPage() {
 
   useEffect(load, [load])
 
+  const isMedicalCertificate = form.type === 'medical_certificate'
+  const periodEnd = singleDayAbsence ? form.start_date : form.end_date
+  const dailyHours = data ? Number(data.summary.collaborator.daily_hours) : 8
+  const isSingleCalendarDay =
+    Boolean(form.start_date) && Boolean(periodEnd) && form.start_date === periodEnd
+  const canUsePartialAbsence = isMedicalCertificate && (singleDayAbsence || isSingleCalendarDay)
+
+  const resolvedExcusedHours = useMemo(() => {
+    if (!canUsePartialAbsence || medicalCoverage === 'full') return null
+    if (medicalCoverage === 'half_afternoon' || medicalCoverage === 'half_morning') {
+      return dailyHours / 2
+    }
+    const parsed = Number(customExcusedHours)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+  }, [canUsePartialAbsence, medicalCoverage, customExcusedHours, dailyHours])
+
+  const absencePreview = useMemo(() => {
+    if (!form.start_date || !periodEnd) return null
+    if (periodEnd < form.start_date) {
+      return { error: 'A data final deve ser igual ou posterior à data inicial.' }
+    }
+    const totalWeekdays = countWeekdaysBetween(form.start_date, periodEnd)
+    const inMonthWeekdays = countWeekdaysInMonthRange(form.start_date, periodEnd, year, month)
+    const partial =
+      resolvedExcusedHours != null && resolvedExcusedHours > 0 && resolvedExcusedHours < dailyHours
+    return {
+      rangeLabel: formatDateRange(form.start_date, periodEnd),
+      totalWeekdays,
+      inMonthWeekdays,
+      partial,
+      excusedHours: resolvedExcusedHours,
+      expectedAfter: partial ? Math.max(0, dailyHours - resolvedExcusedHours) : null,
+    }
+  }, [form.start_date, periodEnd, year, month, resolvedExcusedHours, dailyHours])
+
   const submitAbsence = async (event: FormEvent) => {
     event.preventDefault()
     setAbsenceError(null)
+    if (!form.start_date) {
+      setAbsenceError('Informe a data inicial.')
+      return
+    }
+    if (!singleDayAbsence && !form.end_date) {
+      setAbsenceError(
+        isMedicalCertificate
+          ? 'Informe a data final do período do atestado.'
+          : 'Informe a data final do período ou marque “Um único dia”.',
+      )
+      return
+    }
+    const endDate = singleDayAbsence ? form.start_date : form.end_date
+    if (endDate < form.start_date) {
+      setAbsenceError('A data final deve ser igual ou posterior à data inicial.')
+      return
+    }
+    if (
+      isMedicalCertificate &&
+      medicalCoverage !== 'full' &&
+      form.start_date !== endDate
+    ) {
+      setAbsenceError(
+        'Meio período só vale para um único dia. Marque “Um único dia” ou cadastre dia inteiro no período.',
+      )
+      return
+    }
+    let excused_hours: number | null = null
+    if (isMedicalCertificate && form.start_date === endDate && medicalCoverage !== 'full') {
+      if (medicalCoverage === 'custom') {
+        excused_hours = Number(customExcusedHours)
+        if (!Number.isFinite(excused_hours) || excused_hours <= 0) {
+          setAbsenceError('Informe as horas abonadas.')
+          return
+        }
+      } else {
+        excused_hours = dailyHours / 2
+      }
+      if (excused_hours >= dailyHours) {
+        setAbsenceError(
+          `As horas abonadas devem ser menores que a carga diária (${formatHours(dailyHours)}).`,
+        )
+        return
+      }
+    }
     try {
       await api.createAbsence(collaboratorId, {
         type: form.type,
         start_date: form.start_date,
-        end_date: form.end_date || form.start_date,
+        end_date: endDate,
         note: form.note.trim() || null,
+        excused_hours,
       })
       setForm(EMPTY_ABSENCE)
+      setSingleDayAbsence(false)
+      setMedicalCoverage('full')
+      setCustomExcusedHours('')
       load()
     } catch (err) {
       setAbsenceError((err as Error).message)
@@ -147,58 +239,189 @@ export function CollaboratorDetailPage() {
       <Card>
         <h3 className="text-lg font-semibold">Ausências / Exceções</h3>
         <p className="mt-1 text-sm text-muted">
-          Registre ausências individuais do colaborador. Esses dias não exigem lançamento e não entram como inconsistência.
+          Registre ausências individuais do colaborador. Cada registro vale para{' '}
+          <span className="font-medium">todo o período</span> (início e fim inclusivos). Esses dias
+          não exigem lançamento no Azure e deixam de contar como inconsistência.
         </p>
-        <form className="mt-4 grid gap-3 md:grid-cols-2 lg:grid-cols-4" onSubmit={submitAbsence}>
-          <div>
-            <Label htmlFor="absence-type">Tipo</Label>
-            <select
-              id="absence-type"
-              className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
-              value={form.type}
-              onChange={(event) =>
-                setForm({ ...form, type: event.target.value as CollaboratorAbsence['type'] })
-              }
-              required
+        {isMedicalCertificate && (
+          <p className="mt-2 rounded-md border border-blue-200 bg-blue-50/80 px-3 py-2 text-sm text-blue-950">
+            <span className="font-medium">Atestado médico:</span> use período para vários dias inteiros
+            ou <span className="font-medium">um único dia</span> com meio período (ex.: tarde abonada).
+            No meio período, abona-se parte da carga ({formatHours(dailyHours)}) e o restante continua
+            exigindo lançamento no Azure.
+          </p>
+        )}
+        <form className="mt-4 space-y-4" onSubmit={submitAbsence}>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <Label htmlFor="absence-type">Tipo</Label>
+              <select
+                id="absence-type"
+                className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+                value={form.type}
+                onChange={(event) => {
+                  const type = event.target.value as CollaboratorAbsence['type']
+                  setForm({ ...form, type })
+                  if (type === 'medical_certificate') {
+                    setSingleDayAbsence(false)
+                  }
+                }}
+                required
+              >
+                {Object.entries(ABSENCE_TYPE_LABEL).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-end pb-1 md:col-span-2 lg:col-span-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={singleDayAbsence}
+                  onChange={(event) => {
+                    setSingleDayAbsence(event.target.checked)
+                    if (event.target.checked) {
+                      setForm((current) => ({ ...current, end_date: '' }))
+                    }
+                  }}
+                />
+                Um único dia (início e fim iguais)
+              </label>
+            </div>
+            {canUsePartialAbsence && (
+              <>
+                <div className="md:col-span-2">
+                  <Label htmlFor="medical-coverage">Abrangência (atestado em um dia)</Label>
+                  <select
+                    id="medical-coverage"
+                    className="h-10 w-full rounded-md border border-line bg-white px-3 text-sm"
+                    value={medicalCoverage}
+                    onChange={(event) =>
+                      setMedicalCoverage(
+                        event.target.value as 'full' | 'half_afternoon' | 'half_morning' | 'custom',
+                      )
+                    }
+                  >
+                    <option value="full">Dia inteiro abonado</option>
+                    <option value="half_afternoon">Meio período — tarde abonada</option>
+                    <option value="half_morning">Meio período — manhã abonada</option>
+                    <option value="custom">Outras horas abonadas</option>
+                  </select>
+                </div>
+                {medicalCoverage === 'custom' && (
+                  <div>
+                    <Label htmlFor="excused-hours">Horas abonadas</Label>
+                    <Input
+                      id="excused-hours"
+                      type="number"
+                      min={0.5}
+                      max={dailyHours}
+                      step="any"
+                      inputMode="decimal"
+                      value={customExcusedHours}
+                      onChange={(event) => setCustomExcusedHours(event.target.value)}
+                      placeholder={`Menor que ${formatHours(dailyHours)}`}
+                      required
+                    />
+                  </div>
+                )}
+              </>
+            )}
+            {isMedicalCertificate && !canUsePartialAbsence && (
+              <p className="text-xs text-muted md:col-span-2 lg:col-span-4">
+                Para atestado de meio período, marque &quot;Um único dia&quot; ou use a mesma data no
+                início e no fim.
+              </p>
+            )}
+            <div>
+              <Label htmlFor="absence-start">
+                {singleDayAbsence ? 'Data' : isMedicalCertificate ? 'Início do atestado' : 'Data inicial'}
+              </Label>
+              <Input
+                id="absence-start"
+                type="date"
+                value={form.start_date}
+                onChange={(event) => setForm({ ...form, start_date: event.target.value })}
+                required
+              />
+            </div>
+            {!singleDayAbsence && (
+              <div>
+                <Label htmlFor="absence-end">
+                  {isMedicalCertificate ? 'Fim do atestado' : 'Data final'}
+                </Label>
+                <Input
+                  id="absence-end"
+                  type="date"
+                  value={form.end_date}
+                  min={form.start_date || undefined}
+                  onChange={(event) => setForm({ ...form, end_date: event.target.value })}
+                  required
+                />
+              </div>
+            )}
+            <div className={singleDayAbsence ? 'md:col-span-2' : ''}>
+              <Label htmlFor="absence-note">Observação</Label>
+              <Input
+                id="absence-note"
+                value={form.note}
+                onChange={(event) => setForm({ ...form, note: event.target.value })}
+                placeholder={isMedicalCertificate ? 'Ex.: CID, número do atestado' : 'Opcional'}
+              />
+            </div>
+          </div>
+
+          {absencePreview && (
+            <div
+              className={cn(
+                'rounded-md border px-3 py-2 text-sm',
+                'error' in absencePreview
+                  ? 'border-red-200 bg-red-50 text-red-800'
+                  : 'border-line bg-paper text-ink',
+              )}
             >
-              {Object.entries(ABSENCE_TYPE_LABEL).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </div>
+              {'error' in absencePreview ? (
+                absencePreview.error
+              ) : (
+                <>
+                  <p>
+                    <span className="text-muted">Período: </span>
+                    <span className="font-medium">{absencePreview.rangeLabel}</span>
+                  </p>
+                  <p className="mt-1 text-muted">
+                    {absencePreview.partial ? (
+                      <>
+                        Meio período: {formatHours(absencePreview.excusedHours ?? 0)} abonadas ·
+                        permanecem {formatHours(absencePreview.expectedAfter ?? 0)} exigidas no dia
+                        (lançamento no Azure).
+                      </>
+                    ) : (
+                      <>
+                        {absencePreview.totalWeekdays} dia(s) útil(is) no intervalo
+                        {absencePreview.inMonthWeekdays !== absencePreview.totalWeekdays && (
+                          <>
+                            {' '}
+                            · {absencePreview.inMonthWeekdays} dia(s) útil(is) em{' '}
+                            {monthLabel(year, month)}
+                          </>
+                        )}
+                        . Serão marcados como ausência justificada (dia inteiro).
+                      </>
+                    )}
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
           <div>
-            <Label htmlFor="absence-start">Data inicial</Label>
-            <Input
-              id="absence-start"
-              type="date"
-              value={form.start_date}
-              onChange={(event) => setForm({ ...form, start_date: event.target.value })}
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="absence-end">Data final</Label>
-            <Input
-              id="absence-end"
-              type="date"
-              value={form.end_date}
-              onChange={(event) => setForm({ ...form, end_date: event.target.value })}
-              placeholder="Opcional para um único dia"
-            />
-          </div>
-          <div>
-            <Label htmlFor="absence-note">Observação</Label>
-            <Input
-              id="absence-note"
-              value={form.note}
-              onChange={(event) => setForm({ ...form, note: event.target.value })}
-              placeholder="Opcional"
-            />
-          </div>
-          <div className="md:col-span-2 lg:col-span-4">
-            <Button type="submit">Cadastrar ausência</Button>
+            <Button type="submit">
+              {isMedicalCertificate && !singleDayAbsence
+                ? 'Cadastrar atestado do período'
+                : 'Cadastrar ausência'}
+            </Button>
           </div>
         </form>
         {absenceError && <p className="mt-3 text-sm text-red-700">{absenceError}</p>}
@@ -209,8 +432,7 @@ export function CollaboratorDetailPage() {
               <thead>
                 <tr>
                   <Th>Tipo</Th>
-                  <Th>Início</Th>
-                  <Th>Fim</Th>
+                  <Th>Período</Th>
                   <Th>Observação</Th>
                   <Th />
                 </tr>
@@ -219,8 +441,18 @@ export function CollaboratorDetailPage() {
                 {absences.map((row) => (
                   <tr key={row.id}>
                     <Td>{ABSENCE_TYPE_LABEL[row.type]}</Td>
-                    <Td>{formatDate(row.start_date)}</Td>
-                    <Td>{formatDate(row.end_date)}</Td>
+                    <Td>
+                      {row.start_date === row.end_date
+                        ? formatDate(row.start_date)
+                        : formatDateRange(row.start_date, row.end_date)}
+                      <span className="ml-2 text-xs text-muted">
+                        ({countWeekdaysBetween(row.start_date, row.end_date)} dia(s) útil(is)
+                        {row.excused_hours != null && Number(row.excused_hours) > 0
+                          ? ` · ${formatHours(row.excused_hours)} abonadas/dia`
+                          : ''}
+                        )
+                      </span>
+                    </Td>
                     <Td>{row.note || '—'}</Td>
                     <Td className="text-right">
                       <Button
@@ -259,20 +491,27 @@ export function CollaboratorDetailPage() {
               {data.days.map((day) => {
                 const weekend = isWeekendDate(day.date)
                 const absence = day.status === 'justified_absence'
+                const partialAbsence =
+                  Boolean(day.absence_excused_hours) &&
+                  Number(day.absence_excused_hours) > 0 &&
+                  day.status !== 'justified_absence'
                 return (
                   <tr
                     key={day.date}
                     className={cn(
                       'cursor-pointer',
                       absence && 'bg-blue-50 hover:bg-blue-100',
-                      !absence && weekend && 'bg-red-50 hover:bg-red-100',
-                      !absence && !weekend && 'hover:bg-paper/80',
+                      partialAbsence && 'bg-sky-50 hover:bg-sky-100',
+                      !absence && !partialAbsence && weekend && 'bg-red-50 hover:bg-red-100',
+                      !absence && !partialAbsence && !weekend && 'hover:bg-paper/80',
                       selected?.date === day.date &&
                         (absence
                           ? 'bg-blue-100 ring-2 ring-inset ring-blue-200'
-                          : weekend
-                            ? 'bg-red-100 ring-2 ring-inset ring-red-200'
-                            : 'bg-accent-soft'),
+                          : partialAbsence
+                            ? 'bg-sky-100 ring-2 ring-inset ring-sky-200'
+                            : weekend
+                              ? 'bg-red-100 ring-2 ring-inset ring-red-200'
+                              : 'bg-accent-soft'),
                     )}
                     onClick={() => setSelected(day)}
                   >
@@ -317,6 +556,16 @@ export function CollaboratorDetailPage() {
                     {selected.absence_note ? ` · ${selected.absence_note}` : ''}
                   </p>
                 )}
+                {selected.absence_excused_hours &&
+                  Number(selected.absence_excused_hours) > 0 &&
+                  selected.status !== 'justified_absence' && (
+                    <p className="text-sm text-sky-900">
+                      Atestado parcial: {formatHours(selected.absence_excused_hours)} abonadas ·
+                      esperado no dia {formatHours(selected.expected)} (carga{' '}
+                      {formatHours(summary.collaborator.daily_hours)}).
+                      {selected.absence_note ? ` · ${selected.absence_note}` : ''}
+                    </p>
+                  )}
                 {isWeekendDate(selected.date) && selected.status !== 'justified_absence' && (
                   <p className="text-sm text-red-700">Fim de semana — não exige lançamento de Tasks.</p>
                 )}

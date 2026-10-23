@@ -23,8 +23,16 @@ MAX_UPDATE_PAGES = 100
 
 COMMENT_SOURCE_LIMITATION = (
     "Os comentários foram lidos do histórico do Work Item (campo System.History). "
-    "Este Azure DevOps não publica a API de comentários. Revisões sem texto de histórico "
-    "não entram na contagem, e o estado de exclusão do comentário não é informado."
+    "Revisões sem texto de histórico não entram na contagem, e o estado de exclusão do comentário não é informado. "
+    "O contador System.CommentCount exibido na UI do Azure DevOps pode ser maior que a quantidade "
+    "recuperada pelo histórico quando existe comentário registrado na API de comentários do projeto "
+    "sem revisão de histórico correspondente; a auditoria CTI não altera a contagem para igualar à UI."
+)
+
+COMMENTS_API_VERSION = "7.1-preview.4"
+COMMENTS_API_SOURCE_NOTE = (
+    "Os comentários foram lidos da API de comentários do projeto "
+    "(workItems/{id}/comments, api-version 7.1-preview.4)."
 )
 
 
@@ -175,6 +183,19 @@ class AzureCollectionClient:
         people = [item for item in people if item["display_name"] or item["unique_name"]]
         return {"status": "ok", "people": people}
 
+    def list_work_item_states(self, project: str, work_item_type: str) -> list[str]:
+        url = (
+            f"{self.project_base(project)}/_apis/wit/workitemtypes/"
+            f"{quote(work_item_type.strip())}?api-version={API_VERSION}"
+        )
+        payload = self.request("GET", url)
+        names: list[str] = []
+        for item in payload.get("states") or []:
+            name = str(item.get("name") or "").strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
     def query_work_item_ids(
         self,
         *,
@@ -183,8 +204,9 @@ class AzureCollectionClient:
         date_field: str,
         start: date,
         end: date,
+        state: str | None = None,
     ) -> tuple[list[int], list[str]]:
-        ids, truncated = self._wiql_ids(project, work_item_type, date_field, start, end)
+        ids, truncated = self._wiql_ids(project, work_item_type, date_field, start, end, state)
         limitations: list[str] = []
         if not truncated:
             return ids, limitations
@@ -198,7 +220,7 @@ class AzureCollectionClient:
             month_end = date(cursor.year + (1 if cursor.month == 12 else 0), 1 if cursor.month == 12 else cursor.month + 1, 1)
             if month_end > end:
                 month_end = end
-            part, part_truncated = self._wiql_ids(project, work_item_type, date_field, cursor, month_end)
+            part, part_truncated = self._wiql_ids(project, work_item_type, date_field, cursor, month_end, state)
             if part_truncated:
                 limitations.append(
                     f"O período {cursor.isoformat()} a {month_end.isoformat()} ainda atingiu o limite de {WIQL_PAGE_LIMIT} itens."
@@ -256,6 +278,42 @@ class AzureCollectionClient:
             load(ids[start : start + WORK_ITEM_BATCH])
         return found, failed
 
+    def fetch_ui_comment_counts(self, work_item_ids: list[int]) -> dict[int, int | None]:
+        """System.CommentCount por Issue (contador exibido na UI do Azure DevOps)."""
+        counts: dict[int, int | None] = {}
+        if not work_item_ids:
+            return counts
+        unique = sorted({int(item_id) for item_id in work_item_ids})
+        items, _failures = self.fetch_work_items(unique, field_refs=["System.CommentCount"])
+        for item in items:
+            try:
+                work_item_id = int(item["id"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            raw = (item.get("fields") or {}).get("System.CommentCount")
+            try:
+                counts[work_item_id] = int(raw) if raw is not None else None
+            except (TypeError, ValueError):
+                counts[work_item_id] = None
+        return counts
+
+    def probe_project_comments_api(self, project: str, work_item_id: int) -> dict[str, Any]:
+        """Sonda a API de comentários no escopo do projeto (somente leitura)."""
+        try:
+            comments = self.fetch_work_item_comments(project, work_item_id)
+        except AzureDevOpsAuthError:
+            raise
+        except AzureDevOpsError as exc:
+            message = str(exc).casefold()
+            if "não encontrado" in message or "404" in message:
+                return {"available": False, "reason": "comments_api_not_found", "error": str(exc)}
+            return {"available": False, "error": str(exc)}
+        return {
+            "available": True,
+            "count": len(comments),
+            "api_version": COMMENTS_API_VERSION,
+        }
+
     def probe_comments_api(self, work_item_id: int) -> dict[str, Any]:
         """Verifica se a API de comentários existe neste servidor (somente leitura)."""
         versions = ("7.1-preview.4", "7.0-preview.3", "6.0-preview.3")
@@ -281,6 +339,41 @@ class AzureCollectionClient:
             }
         return {"available": False, "reason": "comments_api_not_found"}
 
+    def fetch_work_item_comments(self, project: str, work_item_id: int) -> list[dict[str, Any]]:
+        """Comentários no escopo do projeto. Não altera a leitura de System.History."""
+        collected: list[dict[str, Any]] = []
+        continuation: str | None = None
+        for _page in range(MAX_UPDATE_PAGES):
+            params: dict[str, str | int] = {
+                "$top": UPDATE_PAGE_SIZE,
+                "order": "asc",
+                "api-version": COMMENTS_API_VERSION,
+            }
+            if continuation:
+                params["continuationToken"] = continuation
+            url = (
+                f"{self.project_base(project)}/_apis/wit/workItems/{int(work_item_id)}/comments"
+                f"?{urlencode(params)}"
+            )
+            payload = self.request("GET", url)
+            page = payload.get("comments") or []
+            collected.extend(page)
+            continuation = str(payload.get("continuationToken") or "").strip() or None
+            total = payload.get("totalCount")
+            if not continuation:
+                return collected
+            if total is not None:
+                try:
+                    if len(collected) >= int(total):
+                        return collected
+                except (TypeError, ValueError):
+                    pass
+            if len(page) == 0:
+                return collected
+        raise AuditPaginationError(
+            f"A paginação dos comentários da Issue {work_item_id} não terminou dentro do limite seguro."
+        )
+
     def fetch_comment_updates(self, work_item_id: int) -> list[dict[str, Any]]:
         collected: list[dict[str, Any]] = []
         skip = 0
@@ -304,7 +397,11 @@ class AzureCollectionClient:
         date_field: str,
         start: date,
         end: date,
+        state: str | None = None,
     ) -> tuple[list[int], bool]:
+        state_clause = ""
+        if state and state.strip():
+            state_clause = f" AND [System.State] = '{_escape_wiql(state.strip())}'"
         wiql = {
             "query": (
                 "SELECT [System.Id] FROM WorkItems "
@@ -312,6 +409,7 @@ class AzureCollectionClient:
                 f"AND [System.WorkItemType] = '{_escape_wiql(work_item_type.strip())}' "
                 f"AND [{date_field}] >= '{start.isoformat()}' "
                 f"AND [{date_field}] < '{end.isoformat()}'"
+                f"{state_clause}"
             )
         }
         url = f"{self.project_base(project)}/_apis/wit/wiql?api-version={API_VERSION}"

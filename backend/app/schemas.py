@@ -44,6 +44,16 @@ class CollaboratorAbsenceCreate(BaseModel):
     start_date: date
     end_date: date
     note: str | None = Field(default=None, max_length=500)
+    excused_hours: Decimal | None = Field(default=None, gt=0, le=24)
+
+    @model_validator(mode="after")
+    def validate_excused_hours(self):
+        if self.excused_hours is not None and self.start_date != self.end_date:
+            raise ValueError(
+                "Horas abonadas só podem ser usadas em atestado de um único dia. "
+                "Para vários dias, cadastre dia inteiro ou registre cada dia parcial separadamente."
+            )
+        return self
 
 
 class CollaboratorAbsenceOut(CollaboratorAbsenceCreate):
@@ -303,6 +313,7 @@ class DayResultOut(BaseModel):
     tasks: list[DayTaskOut] = []
     absence_type: str | None = None
     absence_note: str | None = None
+    absence_excused_hours: Decimal | None = None
     launch_verification: DayLaunchVerificationOut | None = None
 
 

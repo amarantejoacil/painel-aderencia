@@ -71,6 +71,7 @@ def _day_out(day) -> DayResultOut:
         task_count=day.task_count,
         absence_type=day.absence_type,
         absence_note=day.absence_note,
+        absence_excused_hours=day.absence_excused_hours,
         tasks=[
             DayTaskOut(
                 task_id=task.task_id,

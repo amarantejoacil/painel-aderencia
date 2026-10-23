@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unicodedata
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -117,6 +117,44 @@ def comment_from_update(update: dict[str, Any]) -> dict[str, Any] | None:
         "is_deleted": None,
         **author,
     }
+
+
+def comment_from_api(item: dict[str, Any]) -> dict[str, Any] | None:
+    if item.get("isDeleted") is True:
+        return None
+    text = item.get("text")
+    if not isinstance(text, str) or not text.strip():
+        return None
+    author = author_from_identity(item.get("createdBy"))
+    created = parse_azure_datetime(str(item.get("createdDate") or ""))
+    modified = parse_azure_datetime(str(item.get("modifiedDate") or "")) if item.get("modifiedDate") else None
+    local = to_local(created)
+    return {
+        "id": str(item.get("id") or ""),
+        "created_at": created.isoformat() if created else None,
+        "created_at_local": local.isoformat() if local else None,
+        "modified_at": modified.isoformat() if modified else None,
+        "text": text,
+        "is_deleted": False,
+        **author,
+    }
+
+
+def comment_local_date(comment: dict[str, Any]) -> date | None:
+    local = str(comment.get("created_at_local") or "")
+    if len(local) >= 10:
+        try:
+            return date.fromisoformat(local[:10])
+        except ValueError:
+            pass
+    created = parse_azure_datetime(comment.get("created_at"))
+    local_dt = to_local(created)
+    return local_dt.date() if local_dt else None
+
+
+def in_selected_dates(comment: dict[str, Any], start: date, end_inclusive: date) -> bool:
+    current = comment_local_date(comment)
+    return bool(current and start <= current <= end_inclusive)
 
 
 def in_selected_year(comment: dict[str, Any], year: int) -> bool:
